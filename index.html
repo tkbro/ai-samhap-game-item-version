@@ -1008,9 +1008,9 @@
             const SPAWN_EVERY = 3;
             const SPAWN_BATCH = 3;
             const MEGA_INTERVAL = 5;
-            const BLOCK_SPAWN_INTERVAL = 7;
+            const BLOCK_SPAWN_INTERVAL = 10;
             const WILDCARD_TILE = -2; // 특수 와일드카드 타일 (모든 타일과 매칭 가능)
-            const WILDCARD_SPAWN_CHANCE = 0.05; // 와일드카드 타일 등장 확률 (5%)
+            const WILDCARD_SPAWN_CHANCE = 0.01; // 와일드카드 타일 등장 확률 (1%)
             
             // 아이템 확률 설정
             const ITEM_SPAWN_CHANCE_FALSE = 0.0; // false가 전달될 때 아이템 등장 확률 (0%)
@@ -1591,6 +1591,9 @@
                             const val = grid[r][c];
                             // 현재 타일과 연결된 모든 타일을 찾기 위해 maxSize를 Infinity로 설정
                             const currentGroup = floodSame(r, c, val, grid, Infinity);
+                            
+                            // 이동 가능한 위치가 있는지 확인하기 위한 플래그
+                            let hasPossibleMoves = false;
 
                             // 모든 비어있는 칸을 순회하며 이동 가능 여부 확인
                             for (let tr = 0; tr < ROWS; tr++) {
@@ -1621,7 +1624,13 @@
 
                                     // 모든 조건을 통과하면 'possible-move' 클래스를 추가하여 하이라이트
                                     board.children[tr * COLS + tc].classList.add('possible-move');
+                                    hasPossibleMoves = true; // 이동 가능한 위치가 있음을 표시
                                 }
+                            }
+                            
+                            // 이동 가능한 위치가 없으면 에러 메시지 표시
+                            if (!hasPossibleMoves) {
+                                info("이 몬스터는 이동할 수 있는 위치가 없습니다.", "warn");
                             }
                         }
 
@@ -1842,12 +1851,12 @@
                             const mergeResult = resolveAutoMerges(to);
                             
                             // 병합 후 보상 조건 확인 및 팝업 표시
-                            // if (shouldShowReward(mergeResult)) {
-                            //     // 약간의 지연 후 팝업 표시 (애니메이션이 완료된 후)
-                            //     setTimeout(() => {
-                            //         showRewardPopup();
-                            //     }, 700); // 병합 애니메이션 완료 후 적당한 시간 지연
-                            // }
+                            if (shouldShowReward(mergeResult)) {
+                                // 약간의 지연 후 팝업 표시 (애니메이션이 완료된 후)
+                                setTimeout(() => {
+                                    showRewardPopup();
+                                }, 700); // 병합 애니메이션 완료 후 적당한 시간 지연
+                            }
                         } else {
                             // 🎵 이동 사운드 (머지 아닐 때만)
                             sounds.move.currentTime = 0;
@@ -1898,6 +1907,9 @@
                 // 그리드 상태 업데이트
                 grid[from.r][from.c] = 0;
                 grid[to.r][to.c] = v;
+                
+                // 아이템 정보 이동
+                moveItem(from.r, from.c, to.r, to.c);
                 
                 // 원본 타일을 즉시 숨기고 빈 셀로 표시
                 fromTile.style.visibility = 'hidden';
@@ -2139,6 +2151,12 @@
             function newGame() {
                 popupTitle.textContent = "게임 오버";
                 grid = makeGrid();
+
+                // 게임 시작 시 안내 메시지 표시
+                setTimeout(() => {
+                    info("이동할 몬스터를 클릭해주세요.", "")
+                }, 500); // 0.5초 후 안내 메시지 표시
+
                 clearItems(); // 아이템 초기화
                 placeRandomBlocks(-1, BLOCK_MIN + ((Math.random() * (BLOCK_MAX - BLOCK_MIN + 1)) | 0));
                 placeRandomTilesAvoidingTriples(INIT_TILES, 400);
@@ -2587,22 +2605,14 @@
                 // 머지가 발생하지 않은 경우 보상 팝업 표시하지 않음
                 if (!mergeResult || !mergeResult.merged) return false;
                 
-                // 병합 그룹에 아이템을 가진 타일이 있는지 확인
-                let hasItemInMerge = false;
-                
-                // 병합에 참여한 모든 타일의 위치를 저장한 것이 mergeResult에 있으면 더 정확하게 확인 가능
-                // 이 프로토타입에서는 그런 정보가 없으니, 현재 있는 정보만으로 확인
-                // 현재 그리드에서 아이템을 가진 타일이 있는지 확인
-                for (let r = 0; r < ROWS; r++) {
-                    for (let c = 0; c < COLS; c++) {
-                        if (hasItem(r, c)) {
-                            hasItemInMerge = true;
-                            break;
-                        }
-                    }
-                    if (hasItemInMerge) break;
+                // mergeResult에 hasItemInMerge 플래그가 있으면 그것을 사용
+                if (mergeResult.hasItemInMerge !== undefined) {
+                    return mergeResult.hasItemInMerge;
                 }
                 
+                // 병합에 참여한 타일에 아이템이 있었는지 확인하는 플래그를 검사
+                // 이 정보는 resolveAutoMerges 함수에서 처리 과정 중 설정됨
+                // 이 변수가 이미 존재하므로 활용
                 return hasItemInMerge;
             }
 
@@ -2761,6 +2771,9 @@
                 let totalScore = 0;
                 let cascadeCount = 0;
                 
+                // 추적할 변수들 초기화
+                let hasAnyItemInMerge = false;
+                
                 while (true) {
                     // 병합 가능한 모든 그룹 찾기
                     const mergeGroups = findMergeGroups(grid, 3);
@@ -2845,12 +2858,13 @@
                     
                     // 병합된 타일에 아이템이 있는지 확인 및 처리
                     // 병합된 그룹의 어느 타일이라도 아이템을 갖고 있으면 피봇에도 아이템 표시
-                    let hasAnyItemInMerge = false;
+                    let groupHasItemInMerge = false;
                     
                     // 병합되는 모든 타일 확인 (피봇 포함)
                     for (const tile of tiles) {
                         if (hasItem(tile.r, tile.c)) {
-                            hasAnyItemInMerge = true;
+                            groupHasItemInMerge = true;
+                            hasAnyItemInMerge = true; // 전역 플래그도 업데이트
                             break;
                         }
                     }
@@ -2867,7 +2881,7 @@
                     grid[pivot.r][pivot.c] = resultValue;
                     
                     // 아이템이 하나라도 있었으면 결과 타일에도 아이템 표시
-                    setItem(pivot.r, pivot.c, hasAnyItemInMerge);
+                    setItem(pivot.r, pivot.c, groupHasItemInMerge);
                     
                     drawCell(pivot.r, pivot.c);
                     
@@ -2928,14 +2942,8 @@
                 return {
                     merged,
                     score: totalScore,
-                    cascadeCount
-                };
-                
-                // 병합 결과 반환
-                return {
-                    merged,
-                    score: totalScore,
-                    cascadeCount
+                    cascadeCount,
+                    hasItemInMerge: hasAnyItemInMerge // 아이템이 포함된 병합 여부 추가
                 };
             }
 
