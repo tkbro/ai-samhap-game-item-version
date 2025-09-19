@@ -1,0 +1,3334 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>3매칭</title>
+    <style>
+        /* 파티클 효과 스타일 */
+        .particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 5px rgba(255, 215, 0, 0.8);
+            pointer-events: none;
+            z-index: 50;
+        }
+        
+        @keyframes particle-float {
+            0% {
+                opacity: 1;
+                transform: translate(0, 0) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(var(--tx), var(--ty)) scale(0);
+            }
+        }
+        
+        :root {
+            --cols: 5;
+            --rows: 7;
+            --gap: 1vw;
+            --bg: #0b0f14;
+            --fg: #e8f0ff;
+            --muted: #7f8da3;
+            --tile: #18202b;
+            --blocked: #161922;
+            --accent: #46d3ff;
+            --ok: #67ff9a;
+            --warn: #ffcc4d;
+            --err: #ff6b6b;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent
+        }
+
+        html, body {
+            height: 100%
+        }
+
+        body {
+            margin: 0;
+            background: url('images/bg.png') no-repeat center center fixed;
+            background-size: cover;
+            color: var(--fg);
+            font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        header {
+            width: 100%;
+            max-width: 480px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: linear-gradient(180deg,rgba(11,15,20,0.95),rgba(11,15,20,0.6) 70%,transparent);
+            backdrop-filter: blur(6px);
+        }
+
+        #title {
+            font-size: 23px;
+            font-weight: 700;
+            color: #fff;
+            text-align: center
+        }
+
+        .stat {
+            font-size: 12px;
+            color: var(--muted);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center
+        }
+
+        .idtag {
+            padding: 2px 6px;
+            border: 1px solid #2a3443;
+            border-radius: 8px;
+            color: #cfe5ff;
+            background: #121722
+        }
+
+        #version {
+            font-size: 11px;
+            color: #6f7f95
+        }
+
+        #boardWrap {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px
+        }
+
+        #board {
+            width: 90vw;
+            max-width: 480px;
+            aspect-ratio: 5/7;
+            display: grid;
+            grid-template-columns: repeat(var(--cols),1fr);
+            grid-template-rows: repeat(var(--rows),1fr);
+            gap: var(--gap);
+            position: relative;
+            margin: 0 auto;
+            overflow: visible;
+            transition: box-shadow 0.2s ease;
+        }
+        
+        /* 되돌리기 효과 */
+        #board.undo-flash {
+            box-shadow: 0 0 20px rgba(76, 175, 255, 0.7);
+            animation: undo-pulse 0.3s ease-out;
+        }
+        
+        @keyframes undo-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.98); }
+            100% { transform: scale(1); }
+        }
+
+        .cell {
+            aspect-ratio: 1/1;
+            background: transparent;
+            border: 1px solid #1c2736;
+            border-radius: 14px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: visible;
+        }
+
+            .cell::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                border-radius: 14px;
+                pointer-events: none;
+                box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+            }
+
+            .cell.blocked {
+                background: var(--blocked);
+                background-image: repeating-linear-gradient(135deg,#1f2533 0 8px,#141925 8px 16px);
+                border-color: #20283a;
+            }
+            
+            /* 제거 가능한 블록 강조 효과 */
+            .cell.removable-block {
+                border: 2px solid #67ff9a;
+                box-shadow: inset 0 0 12px rgba(103, 255, 154, 0.6);
+                cursor: pointer;
+                transition: all 0.2s ease-out;
+            }
+            
+            .cell.removable-block:hover {
+                border: 2px solid #67ff9a;
+                box-shadow: inset 0 0 18px rgba(103, 255, 154, 0.8);
+                transform: scale(1.05);
+            }
+            
+            /* 제거 불가능한 블록 효과 */
+            .cell.non-removable-block {
+                border: 2px solid #555;
+                box-shadow: inset 0 0 8px rgba(85, 85, 85, 0.4);
+                cursor: not-allowed;
+                opacity: 0.6;
+                transition: all 0.2s ease-out;
+            }
+            
+            .cell.non-removable-block:hover {
+                border: 2px solid #666;
+                box-shadow: inset 0 0 10px rgba(102, 102, 102, 0.5);
+            }
+        
+            .cell.possible-move {
+                background-color: rgba(70, 211, 255, 0.2);
+                box-shadow: inset 0 0 12px rgba(70, 211, 255, 0.8);
+                border-radius: 14px;
+            }
+
+            .cell.path-highlight {
+                background-color: rgba(255, 204, 77, 0.3);
+                box-shadow: inset 0 0 8px rgba(255, 204, 77, 0.6);
+            }
+
+        .tile {
+            position: absolute;
+            inset: 0;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            user-select: none;
+            -webkit-user-select: none;
+            transition: transform .15s ease;
+        }
+
+            .tile.sel {
+                border: 3px solid var(--accent);
+                transform: scale(1.1);
+                box-shadow: 0 0 15px var(--accent),0 0 25px rgba(70,211,255,0.7);
+                z-index: 10;
+            }
+
+            .tile.spawn {
+                animation: pop .22s ease-out;
+            }
+
+            .tile.bump {
+                animation: bump .18s ease-out;
+            }
+
+            .tile.merge {
+                animation: merge .5s ease-in-out;
+            }
+            
+            .tile.merge-large {
+                animation: merge-large .7s ease-in-out;
+                z-index: 10;
+            }
+            
+            .tile.merge-mega {
+                animation: merge-mega .9s ease-in-out;
+                z-index: 20;
+            }
+            
+            /* 병합 후 추가 효과 - 반짝이는 테두리 효과 */
+            .tile.after-merge {
+                animation: after-merge-glow 0.8s ease-in-out;
+                z-index: 5;
+            }
+            
+            .tile.after-merge-large {
+                animation: after-merge-glow-large 1s ease-in-out;
+                z-index: 10;
+            }
+            
+            .tile.after-merge-mega {
+                animation: after-merge-glow-mega 1.5s ease-in-out;
+                z-index: 20;
+            }
+            
+            .tile.wildcard {
+                box-shadow: 0 0 15px gold, 0 0 25px rgba(255, 215, 0, 0.7);
+                animation: wildcard-glow 1.5s infinite alternate;
+            }
+            
+            /* 아이템이 있는 타일 스타일 */
+            .tile[data-has-item="true"] {
+                border: 2px solid #ffc107;
+                box-shadow: 0 0 10px rgba(255, 193, 7, 0.7);
+            }
+            
+            .tile[data-has-item="true"]::after {
+                content: "";
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                width: 12px;
+                height: 12px;
+                background-color: #ffc107;
+                border: 2px solid #fff;
+                border-radius: 50%;
+                box-shadow: 0 0 5px #ffc107;
+                animation: item-glow 1.5s infinite alternate;
+                z-index: 10;
+            }
+            
+            @keyframes item-glow {
+                from {
+                    box-shadow: 0 0 3px gold;
+                    transform: scale(1);
+                }
+                to {
+                    box-shadow: 0 0 8px gold;
+                    transform: scale(1.2);
+                }
+            }
+            
+            @keyframes wildcard-glow {
+                from {
+                    box-shadow: 0 0 10px gold, 0 0 20px rgba(255, 215, 0, 0.7);
+                }
+                to {
+                    box-shadow: 0 0 15px gold, 0 0 30px rgba(255, 215, 0, 0.9);
+                }
+            }
+
+        @keyframes pop {
+            from {
+                transform: scale(0.6);
+                opacity: 0
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1
+            }
+        }
+
+        @keyframes bump {
+            0% {
+                transform: scale(1)
+            }
+
+            50% {
+                transform: scale(1.08)
+            }
+
+            100% {
+                transform: scale(1)
+            }
+        }
+
+        @keyframes merge {
+            0% {
+                transform: scale(0.95)
+            }
+
+            50% {
+                transform: scale(1.12)
+            }
+            
+            70% {
+                transform: scale(1.05)
+            }
+
+            85% {
+                transform: scale(1.02)
+            }
+
+            100% {
+                transform: scale(1)
+            }
+        }
+        
+        @keyframes merge-large {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            }
+
+            40% {
+                transform: scale(1.15);
+                box-shadow: 0 0 20px rgba(255, 255, 255, 0.8), 0 0 30px rgba(255, 215, 0, 0.6);
+            }
+            
+            60% {
+                transform: scale(1.08) rotate(3deg);
+                box-shadow: 0 0 15px rgba(255, 255, 255, 0.7), 0 0 25px rgba(255, 215, 0, 0.5);
+            }
+            
+            80% {
+                transform: scale(1.04) rotate(-1deg);
+                box-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 15px rgba(255, 215, 0, 0.4);
+            }
+
+            100% {
+                transform: scale(1) rotate(0);
+                box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+            }
+        }
+        
+        @keyframes merge-mega {
+            0% {
+                transform: scale(0.95) rotate(-2deg);
+                box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            }
+            20% {
+                transform: scale(1.2) rotate(5deg);
+                box-shadow: 0 0 25px rgba(255, 255, 255, 0.9), 0 0 35px rgba(255, 215, 0, 0.8);
+                filter: brightness(1.2);
+            }
+            40% {
+                transform: scale(1.15) rotate(-4deg);
+                box-shadow: 0 0 20px rgba(255, 255, 255, 0.8), 0 0 30px rgba(255, 215, 0, 0.7);
+                filter: brightness(1.1);
+            }
+            60% {
+                transform: scale(1.1) rotate(3deg);
+                box-shadow: 0 0 15px rgba(255, 255, 255, 0.7), 0 0 25px rgba(255, 215, 0, 0.6);
+                filter: brightness(1.05);
+            }
+            80% {
+                transform: scale(1.05) rotate(-1deg);
+                box-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 15px rgba(255, 215, 0, 0.4);
+                filter: brightness(1.02);
+            }
+            100% {
+                transform: scale(1) rotate(0);
+                box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+                filter: brightness(1);
+            }
+        }
+
+        .tile.moving {
+            z-index: 100;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(70, 211, 255, 0.6);
+            transform: scale(1.1);
+            border: 2px solid var(--accent);
+            border-radius: 12px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        #controlBar {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            padding: 10px 0 16px;
+        }
+
+        .btn {
+            appearance: none;
+            border: 1px solid #2a3443;
+            background: #121722;
+            color: var(--fg);
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform .05s ease-out,background .2s, box-shadow 0.2s;
+        }
+
+            .btn:active {
+                transform: scale(0.98)
+            }
+            
+            /* 몬스터 소환 버튼 스타일 */
+            #btnSpawnMonster {
+                background: #1c2e3e;
+                border-color: #3a7ea9;
+                color: #a9d4ff;
+            }
+            
+            #btnSpawnMonster:hover {
+                background: #24394d;
+                box-shadow: 0 0 8px rgba(58, 126, 169, 0.5);
+            }
+            
+            /* 조커 소환 버튼 스타일 */
+            #btnSpawnWildcard {
+                background: #3d2c13;
+                border-color: #bd9331;
+                color: #ffd57f;
+            }
+            
+            #btnSpawnWildcard:hover {
+                background: #4d3919;
+                box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+            }
+
+        .msg {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%,-50%);
+            background: rgba(17,26,40,0.7);
+            border: 2px solid #223043;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: bold;
+            color: #ffcc4d;
+            opacity: 0;
+            min-width: 420px; /* 좌우 사이즈 늘림 */
+            max-width: 90vw; /* 화면이 좁을 때도 꽉 차지 않게 제한 */
+            white-space: pre-line;
+            transition: opacity .5s ease;
+            z-index: 1000;
+            pointer-events: none;
+            line-height: 3;
+            text-align: center;   /* 텍스트 가운데 정렬 */
+        }
+        
+        /* 점수 표시 팝업 */
+        .score-popup {
+            position: absolute;
+            font-weight: bold;
+            font-size: 16px;
+            color: white;
+            text-shadow: 0 0 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.6);
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0;
+            transform: translateY(0);
+        }
+        
+        .score-popup.show {
+            animation: score-float 1.8s ease-out forwards;
+        }
+        
+        .score-popup.bonus {
+            color: #ffcc4d;
+            font-size: 20px;
+            text-shadow: 0 0 8px rgba(70,211,255,0.8), 0 0 12px rgba(0,0,0,0.7);
+        }
+        
+        .score-popup.mega-bonus {
+            color: #67ff9a;
+            font-size: 24px;
+            text-shadow: 0 0 10px rgba(103,255,154,0.8), 0 0 14px rgba(0,0,0,0.8);
+        }
+        
+        @keyframes screen-flash {
+            0% {
+                opacity: 0;
+            }
+            15% {
+                opacity: 0.4;
+            }
+            100% {
+                opacity: 0;
+            }
+        }
+        
+        .screen-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 100;
+            animation: screen-flash 0.3s ease-out;
+        }
+        
+        @keyframes score-float {
+            0% {
+                opacity: 0;
+                transform: translateY(0);
+            }
+            20% {
+                opacity: 1;
+            }
+            80% {
+                opacity: 1;
+                transform: translateY(-40px);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+        }
+        
+        .score-popup {
+            position: absolute;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 50;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.7);
+            animation: score-float 0.9s ease-out;
+            transform-origin: center;
+            white-space: nowrap;
+        }
+        
+        .score-popup.large-score {
+            font-size: 22px;
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 5px rgba(0, 0, 0, 0.9);
+        }
+        
+        .score-popup.mega-score {
+            font-size: 26px;
+            color: #ff5e3a;
+            text-shadow: 0 0 15px rgba(255, 94, 58, 0.8), 0 0 5px rgba(0, 0, 0, 0.9);
+            animation: score-float 0.9s ease-out, pop 0.3s ease-in-out;
+        }
+            .msg.show {
+                opacity: 1
+            }
+
+        #resultPopup {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.65);
+            z-index: 999;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity .25s;
+        }
+
+            #resultPopup.show {
+                visibility: visible;
+                opacity: 1
+            }
+
+        #resultBox {
+            background: #161c29;
+            padding: 24px;
+            border-radius: 16px;
+            text-align: center;
+            min-width: 360px;
+            max-width: 96vw;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+        }
+
+            #resultBox h2 {
+                margin: 0 0 8px;
+                font-size: 20px;
+            }
+
+            #resultBox p {
+                margin: 6px 0;
+                font-size: 14px;
+                color: var(--muted);
+            }
+
+            #resultBox .btn {
+                margin-top: 12px;
+            }
+
+        #rankHeader {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        #rankings {
+            margin-top: 10px;
+            max-height: 320px;
+            overflow-y: auto;
+            text-align: left;
+            border: 1px solid #2a3443;
+            border-radius: 10px;
+        }
+
+        .rank-item {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            padding: 6px 10px;
+            border-bottom: 1px solid #222a3b;
+            font-size: 14px;
+            gap: 10px;
+        }
+
+            .rank-item .left {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .rank-item .right {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .rank-item .score {
+                min-width: 60px;
+                text-align: right;
+            }
+
+            .rank-item .btn {
+                font-size: 12px;
+                padding: 2px 6px;
+                height: 22px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                top: -6px;
+            }
+
+        .crown {
+            font-size: 16px;
+            line-height: 1
+        }
+
+        .top1 .crown {
+            color: gold;
+            filter: drop-shadow(0 0 6px rgba(255,215,0,.35))
+        }
+
+        .top2 .crown {
+            color: silver;
+            filter: drop-shadow(0 0 6px rgba(192,192,192,.3))
+        }
+
+        .top3 .crown {
+            color: #cd7f32;
+            filter: drop-shadow(0 0 6px rgba(205,127,50,.3))
+        }
+
+        #noMovesMsg {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--warn);
+        }
+        
+        /* 보상 선택 팝업 스타일 */
+        #rewardPopup {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.65);
+            z-index: 999;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity .25s;
+        }
+        
+        #rewardPopup.show {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        #rewardBox {
+            background: #161c29;
+            padding: 24px;
+            border-radius: 16px;
+            text-align: center;
+            min-width: 360px;
+            max-width: 96vw;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+        }
+        
+        #rewardBox h2 {
+            margin: 0 0 8px;
+            font-size: 20px;
+            color: var(--accent);
+        }
+        
+        #rewardBox p {
+            margin: 6px 0 20px;
+            font-size: 15px;
+            color: var(--fg);
+        }
+        
+        .reward-options {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        
+        .reward-option {
+            width: 80px;
+            height: 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            border-radius: 10px;
+            background: #1c2336;
+            border: 2px solid #2a3443;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .reward-option:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(70, 211, 255, 0.4);
+            border-color: var(--accent);
+        }
+        
+        .reward-icon {
+            width: 50px;
+            height: 50px;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        
+        .undo-icon {
+            background-image: url('images/undo-icon.png');
+            filter: drop-shadow(0 0 5px rgba(70, 211, 255, 0.7));
+        }
+        
+        .block-removal-icon {
+            background-image: url('images/block-removal-icon.png');
+            filter: drop-shadow(0 0 5px rgba(103, 255, 154, 0.7));
+        }
+        
+        .monster-spawn-icon {
+            background-image: url('images/monster-spawn-icon.png');
+            filter: drop-shadow(0 0 5px rgba(255, 136, 77, 0.7));
+        }
+        
+        .wildcard-spawn-icon {
+            background-image: url('images/wildcard-icon.png');
+            filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.7));
+        }
+        
+        .reward-name {
+            font-size: 12px;
+            font-weight: 500;
+            margin-top: 8px;
+            color: #cfe5ff;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div id="title">3개의 몬스터를 합치세요</div>
+        <div class="stat">
+            <span class="idtag" id="idView">ID: -</span>
+            <span>턴: <b id="turn">0</b></span>
+            <span>다음 소환: <b id="nextSpawn">3</b></span>
+            <span>대소환 남음: <b id="megaLeft">5</b></span>
+            <span>방해 블럭 남음: <b id="blockLeft">7</b></span>
+            <span id="version">v1.5.0</span>
+        </div>
+    </header>
+    <div id="boardWrap">
+        <div id="board"></div>
+        <div id="controlBar">
+            <button class="btn" id="btnNew">새 게임</button>
+            <button class="btn" id="btnUndo">되돌리기 (3회)</button>
+            <button class="btn" id="btnResetId">아이디 초기화</button>
+            <button class="btn" id="btnRankManual">랭킹 불러오기</button>
+            <button class="btn" id="btnBlockRemoval">블록 제거 (3회)</button>
+            <button class="btn" id="btnSpawnMonster">몬스터 소환 (5회)</button>
+            <button class="btn" id="btnSpawnWildcard">조커 소환 (2회)</button>
+        </div>
+    </div>
+    <div class="msg" id="toast"></div>
+    <div id="resultPopup">
+        <div id="resultBox">
+            <h2 id="popupTitle">게임 오버</h2>
+            <p id="finalScore"></p>
+            <p id="noMovesMsg" style="display:none;">이동 가능한 소환수가 없습니다.</p>
+            <div id="rankHeader"><h3 style="margin:0;font-size:16px;">랭킹 TOP 100</h3></div>
+            <div id="rankings"><div style="padding:10px">랭킹을 불러오는중...</div></div>
+            <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
+                <button class="btn" id="btnRestart">다시 시작</button>
+                <button class="btn" id="btnBack">돌아가기</button>
+                <button class="btn" id="btnViewBest">내 최고 기록 확인</button>
+            </div>
+        </div>
+    </div>
+    <div id="rewardPopup">
+        <div id="rewardBox">
+            <h2>보상 선택</h2>
+            <p>병합 성공! 보상을 선택하세요</p>
+            <div class="reward-options">
+                <div class="reward-option" data-type="undo">
+                    <div class="reward-icon undo-icon"></div>
+                    <div class="reward-name">되돌리기</div>
+                </div>
+                <div class="reward-option" data-type="blockRemoval">
+                    <div class="reward-icon block-removal-icon"></div>
+                    <div class="reward-name">블록 제거</div>
+                </div>
+                <div class="reward-option" data-type="monsterSpawn">
+                    <div class="reward-icon monster-spawn-icon"></div>
+                    <div class="reward-name">몬스터 소환</div>
+                </div>
+                <div class="reward-option" data-type="wildcardSpawn">
+                    <div class="reward-icon wildcard-spawn-icon"></div>
+                    <div class="reward-name">조커 소환</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        (() => {
+            /* ====== 이미지 프리로드 ====== */
+            function preloadImages(urls) {
+                return Promise.all(urls.map(src => new Promise(res => {
+                    const img = new Image();
+                    img.onload = res;
+                    img.onerror = res;
+                    img.src = src;
+                })));
+            }
+            const IMAGE_URLS = [
+                "images/block-1.png", "images/block-2.png", "images/block-3.png",
+                "images/block-4.png", "images/block-5.png", "images/block-6.png",
+                "images/block-7.png", "images/block-8.png", "images/block-9.png",
+                "images/blocked.png", "images/empty.png", "images/bg.png", "images/wildcard.png"
+            ];
+
+            /* ====== 🎵 사운드 로드 ====== */
+            window.sounds = {
+                bgm: new Audio("sounds/bgm.mp3"),
+                move: new Audio("sounds/move.mp3"),
+                click: new Audio("sounds/click.mp3"),
+                toast: new Audio("sounds/toast.mp3"),
+                gameover: new Audio("sounds/gameover.mp3"),
+                block: new Audio("sounds/click.mp3"), // 방해 블록 생성 사운드 (임시로 click.mp3 사용)
+                special: {
+                    megaMerge: new Audio("sounds/block-8.mp3") // 큰 병합을 위한 특별 효과음
+                },
+                blocks: {
+                    3: new Audio("sounds/block-2.mp3"),
+                    9: new Audio("sounds/block-3.mp3"),
+                    27: new Audio("sounds/block-4.mp3"),
+                    81: new Audio("sounds/block-5.mp3"),
+                    243: new Audio("sounds/block-6.mp3"),
+                    729: new Audio("sounds/block-7.mp3"),
+                    2187: new Audio("sounds/block-8.mp3"),
+                    6561: new Audio("sounds/block-9.mp3")
+                }
+            };
+
+
+            // 오디오 오류 방지 함수 - 전역으로 노출
+            window.playSoundSafely = function(sound) {
+                if (!sound) return;
+                
+                try {
+                    // 사운드 재생 시도
+                    const playPromise = sound.play();
+                    
+                    // 프로미스 처리
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            // 오류 발생시 무시
+                            console.warn('Sound play failed:', error);
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Sound playback error:', e);
+                }
+            };
+            
+            // 사운드 로딩 검사
+            function validateSounds() {
+                // 기본 사운드 검사
+                const soundKeys = ['bgm', 'move', 'click', 'toast', 'gameover'];
+                for (const key of soundKeys) {
+                    if (!sounds[key].src || sounds[key].error) {
+                        console.warn(`Sound '${key}' failed to load. Using empty audio.`);
+                        sounds[key] = new Audio(); // 빈 오디오로 대체
+                    }
+                }
+                
+                // 특수 사운드 검사
+                if (!sounds.special.megaMerge.src || sounds.special.megaMerge.error) {
+                    console.warn('Special sound megaMerge failed to load. Using empty audio.');
+                    sounds.special.megaMerge = new Audio();
+                }
+                
+                // 블록 사운드 검사
+                for (const key in sounds.blocks) {
+                    if (!sounds.blocks[key].src || sounds.blocks[key].error) {
+                        console.warn(`Block sound ${key} failed to load. Using empty audio.`);
+                        sounds.blocks[key] = new Audio();
+                    }
+                }
+            }
+            
+            // 루프 & 볼륨
+            sounds.bgm.loop = true;
+            sounds.bgm.volume = 1;
+            sounds.move.volume = 1;
+            sounds.click.volume = 1;
+            sounds.toast.volume = 1;
+            sounds.gameover.volume = 1;
+            for (let k in sounds.blocks) sounds.blocks[k].volume = 1;
+            
+            // 사운드 검사
+            validateSounds();
+
+
+            /* ====== 기본 설정 ====== */
+            const GAS_URL = "https://script.google.com/macros/s/AKfycbzdvX2sII9CetZq4SHnThBLZSM9T9VHLw1Oqo6RvQbWrf_xBITGMqmfdzFFYIWd6Qrn/exec";
+            const COLS = 5, ROWS = 7;
+            const INIT_TILES = 12;
+            const BLOCK_MIN = 3, BLOCK_MAX = 3;
+            const SPAWN_EVERY = 3;
+            const SPAWN_BATCH = 3;
+            const MEGA_INTERVAL = 5;
+            const BLOCK_SPAWN_INTERVAL = 7;
+            const WILDCARD_TILE = -2; // 특수 와일드카드 타일 (모든 타일과 매칭 가능)
+            const WILDCARD_SPAWN_CHANCE = 0.05; // 와일드카드 타일 등장 확률 (5%)
+            
+            // 아이템 확률 설정
+            const ITEM_SPAWN_CHANCE_FALSE = 0.0; // false가 전달될 때 아이템 등장 확률 (0%)
+            const ITEM_SPAWN_CHANCE_TRUE = 0.1;  // true가 전달될 때 아이템 등장 확률 (0%)
+            
+            // 합성 애니메이션 설정
+            const MERGE_ANIMATION_DURATION = 600; // ms
+            const MERGE_HIGHLIGHT_DURATION = 300; // ms
+            const MERGE_ABSORB_DURATION = 400; // ms
+            const MERGE_COMPLETE_DURATION = 220; // ms
+            
+            // 보너스 점수 설정
+            const BONUS_THRESHOLD = 3;      // 3개 이상 합성부터 보너스
+            const MEGA_BONUS_THRESHOLD = 5;  // 5개 이상 합성부터 메가 보너스
+
+            // 블럭 이미지 매핑
+            const TILE_IMAGES = {
+                1: "images/block-1.png", 3: "images/block-2.png", 9: "images/block-3.png",
+                27: "images/block-4.png", 81: "images/block-5.png", 243: "images/block-6.png",
+                729: "images/block-7.png", 2187: "images/block-8.png", 6561: "images/block-9.png",
+                [WILDCARD_TILE]: "images/wildcard.png" // 와일드카드 타일 이미지
+            };
+
+            let grid = [], tileItems = {}, turn = 0, untilSpawn = SPAWN_EVERY, spawnCount = 0, blockSpawnTurn = BLOCK_SPAWN_INTERVAL, selected = null, history = [], gameOverShown = false;
+            let lastGameState = null, bestScore = 0, bestGameState = null;
+            let isAnimating = false;  // 애니메이션 진행 중 플래그
+            let activeScorePopups = []; // 활성화된 점수 팝업
+            let blockRemovalMode = false; // 블록 제거 모드 활성화 여부
+            let blockRemovalUsesLeft = 3; // 남은 블록 제거 횟수
+            
+            // 되돌리기, 소환 기능 제한 횟수 관련 변수
+            let undoUsesLeft = 3; // 남은 되돌리기 횟수
+            let monsterSpawnUsesLeft = 5; // 남은 몬스터 소환 횟수
+            let wildcardSpawnUsesLeft = 2; // 남은 조커 소환 횟수
+            
+            // 블록 제거 버튼 업데이트 함수
+            function updateBlockRemovalButton() {
+                const btn = document.getElementById('btnBlockRemoval');
+                
+                if (blockRemovalUsesLeft <= 0) {
+                    btn.textContent = "블록 제거 (완료)";
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                    blockRemovalMode = false;
+                } else {
+                    btn.textContent = `블록 제거 (${blockRemovalUsesLeft}회)`;
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                    
+                    // 활성화된 모드 상태 표시
+                    if (blockRemovalMode) {
+                        btn.style.background = "#2a4d6e";
+                        btn.style.borderColor = "#46d3ff";
+                        btn.style.boxShadow = "0 0 8px rgba(70, 211, 255, 0.5)";
+                    } else {
+                        btn.style.background = "#121722";
+                        btn.style.borderColor = "#2a3443";
+                        btn.style.boxShadow = "none";
+                    }
+                }
+            }
+            
+            // 되돌리기 버튼 업데이트 함수
+            function updateUndoButton() {
+                const btnUndo = document.getElementById('btnUndo');
+                if (!btnUndo) return;
+                
+                // 히스토리가 없거나 남은 횟수가 0이면 비활성화
+                if (history.length === 0 || undoUsesLeft <= 0) {
+                    btnUndo.disabled = true;
+                    btnUndo.style.opacity = "0.5";
+                    
+                    // 횟수에 따른 텍스트 설정
+                    if (undoUsesLeft <= 0) {
+                        btnUndo.textContent = `되돌리기 (완료)`;
+                    } else {
+                        btnUndo.textContent = `되돌리기 (${undoUsesLeft}회)`;
+                    }
+                } else {
+                    btnUndo.disabled = false;
+                    btnUndo.style.opacity = "1";
+                    btnUndo.textContent = `되돌리기 (${undoUsesLeft}회)`;
+                }
+            }
+            
+            // 몬스터 소환 버튼 업데이트 함수
+            function updateMonsterSpawnButton() {
+                const btn = document.getElementById('btnSpawnMonster');
+                if (!btn) return;
+                
+                if (monsterSpawnUsesLeft <= 0) {
+                    btn.textContent = "몬스터 소환 (완료)";
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                } else {
+                    btn.textContent = `몬스터 소환 (${monsterSpawnUsesLeft}회)`;
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                }
+            }
+            
+            // 조커 소환 버튼 업데이트 함수
+            function updateWildcardSpawnButton() {
+                const btn = document.getElementById('btnSpawnWildcard');
+                if (!btn) return;
+                
+                if (wildcardSpawnUsesLeft <= 0) {
+                    btn.textContent = "조커 소환 (완료)";
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                } else {
+                    btn.textContent = `조커 소환 (${wildcardSpawnUsesLeft}회)`;
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                }
+            }
+            
+            // 모든 버튼 상태 업데이트
+            function updateAllButtons() {
+                updateBlockRemovalButton();
+                updateUndoButton();
+                updateMonsterSpawnButton();
+                updateWildcardSpawnButton();
+            }
+
+            const board = document.getElementById('board');
+            const elTurn = document.getElementById('turn'),
+                elNext = document.getElementById('nextSpawn'),
+                elMega = document.getElementById('megaLeft'),
+                elBlock = document.getElementById('blockLeft');
+            const toast = document.getElementById('toast');
+            let toastTimer = null;
+
+            function info(t, k) {
+                // 중복 메시지 처리 방지
+                if (toast.textContent === t && toast.classList.contains('show')) {
+                    return;
+                }
+                
+                toast.textContent = t;
+                toast.style.color =
+                    k === 'err' ? 'var(--err)' :
+                        (k === 'warn' ? 'var(--warn)' : 'var(--fg)');
+
+                // show 재적용
+                toast.classList.remove('show');
+                void toast.offsetWidth;
+                toast.classList.add('show');
+
+                // 🎵 안내문구음
+                sounds.toast.currentTime = 0;
+                playSoundSafely(sounds.toast);
+
+                if (toastTimer) clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => {
+                    toast.classList.remove('show');
+                    toastTimer = null;
+                }, 2000);
+            }
+
+            const popup = document.getElementById('resultPopup'),
+                finalScore = document.getElementById('finalScore'),
+                popupTitle = document.getElementById('popupTitle');
+            const idView = document.getElementById('idView');
+            const rankingsEl = document.getElementById('rankings');
+            const noMovesMsg = document.getElementById('noMovesMsg');
+            /* ====== 아이디 ====== */
+            let playerId = localStorage.getItem("mergePlayerId");
+            function askPlayerId(force = false) {
+                if (!playerId || force) {
+                    let input = "";
+                    while (!input) {
+                        input = prompt("플레이어 아이디를 입력하세요:");
+                        if (input === null) { input = ""; }
+                    }
+                    playerId = input.trim();
+                    localStorage.setItem("mergePlayerId", playerId);
+                    info(`아이디 설정됨: ${playerId}`);
+                }
+                idView.textContent = "ID: " + playerId;
+            }
+
+            /* ====== 애니메이션 효과 함수 ====== */
+            function createParticles(x, y, count = 10, sizeFactor = 1) {
+                // 매치 발생 위치에서 파티클 효과 생성
+                // 상대적 위치가 아닌 절대적 좌표 사용
+                const container = document.querySelector('.game-container');
+                
+                // 컨테이너가 존재하지 않을 수 있으므로 예외 처리
+                if (!container) {
+                    // 컨테이너가 없으면 그대로 좌표 사용
+                    // 절대 좌표를 사용하므로 document.body에 추가
+                } else {
+                    // 게임 영역이 있는 경우 상대적 좌표 계산
+                    const rect = container.getBoundingClientRect();
+                    x = x + rect.left;
+                    y = y + rect.top;
+                }
+                
+                for (let i = 0; i < count; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    
+                    // 크기 랜덤화
+                    const size = (4 + Math.random() * 8) * sizeFactor;
+                    particle.style.width = size + 'px';
+                    particle.style.height = size + 'px';
+                    
+                    // 초기 위치
+                    particle.style.left = x + 'px';
+                    particle.style.top = y + 'px';
+                    
+                    // 이동 방향 랜덤화
+                    const tx = (Math.random() - 0.5) * 100;
+                    const ty = (Math.random() - 0.5) * 100;
+                    particle.style.setProperty('--tx', tx + 'px');
+                    particle.style.setProperty('--ty', ty + 'px');
+                    
+                    // 애니메이션 설정
+                    const duration = 0.5 + Math.random() * 0.7;
+                    particle.style.animation = `particle-float ${duration}s ease-out forwards`;
+                    
+                    // 색상 랜덤화
+                    const hue = Math.random() * 60 + 30; // 황금색 계열
+                    particle.style.backgroundColor = `hsla(${hue}, 100%, 70%, 0.8)`;
+                    particle.style.boxShadow = `0 0 ${size}px hsla(${hue}, 100%, 50%, 0.6)`;
+                    
+                    document.body.appendChild(particle);
+                    
+                    // 애니메이션 종료 후 요소 제거
+                    setTimeout(() => particle.remove(), duration * 1000);
+                }
+            }
+            
+            /* ====== 유틸 ====== */
+            function cloneGrid(g) { return g.map(r => r.slice()); }
+            function inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
+            function isEmpty(r, c) { return grid[r][c] === 0; }
+            function isBlocked(r, c) { return grid[r][c] === -1; }
+            function isTile(r, c) { return grid[r][c] > 0 || grid[r][c] === WILDCARD_TILE; }
+            function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0;[a[i], a[j]] = [a[j], a[i]]; } }
+            function listEmpty() { const out = []; for (let r = 0; r < ROWS; r++)for (let c = 0; c < COLS; c++)if (grid[r][c] === 0) out.push({ r, c }); return out; }
+            
+            // 타일 아이템 관리 함수
+            function hasItem(r, c) {
+                const key = `${r},${c}`;
+                return tileItems[key] === true;
+            }
+            
+            function setItem(r, c, hasItem = true) {
+                const key = `${r},${c}`;
+                // 확률에 기반한 아이템 설정
+                const probability = hasItem ? ITEM_SPAWN_CHANCE_TRUE : ITEM_SPAWN_CHANCE_FALSE;
+                const shouldHaveItem = Math.random() < probability;
+                
+                if (shouldHaveItem) {
+                    tileItems[key] = true;
+                } else {
+                    delete tileItems[key];
+                }
+            }
+            
+            function moveItem(fromR, fromC, toR, toC) {
+                const fromKey = `${fromR},${fromC}`;
+                const toKey = `${toR},${toC}`;
+                
+                if (tileItems[fromKey]) {
+                    tileItems[toKey] = true;
+                    delete tileItems[fromKey];
+                    return true;
+                }
+                return false;
+            }
+            
+            function clearItems() {
+                tileItems = {};
+            }
+            /**
+             * Checks if a tile at a specific position has any legal moves in the given grid state
+             * 
+             * @param {number} r - Row index of the tile to check
+             * @param {number} c - Column index of the tile to check
+             * @param {Array<Array<number>>} g - The grid state to check against
+             * @returns {boolean} - True if the tile has at least one legal move, false otherwise
+             */
+            function hasAnyLegalMove(r, c, g) {
+              // Check if a tile at position (r,c) has any legal moves
+              const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+              const val = g[r][c];
+              
+              for (const [dr, dc] of dirs) {
+                const nr = r + dr, nc = c + dc;
+                if (!inBounds(nr, nc)) continue;
+                
+                // Can move to empty cells
+                if (g[nr][nc] === 0) return true;
+                
+                // Check for potential merges
+                if (g[nr][nc] > 0 && g[nr][nc] === val) return true;
+                if (g[nr][nc] === WILDCARD_TILE || val === WILDCARD_TILE) return true;
+              }
+              
+              return false;
+            }
+            
+            /**
+             * Checks if a blocked tile at the specified position can be removed
+             * without making the game unwinnable
+             * 
+             * @param {number} r - Row index of the blocked tile to check
+             * @param {number} c - Column index of the blocked tile to check
+             * @returns {boolean} - True if the block can be removed safely, false otherwise
+             */
+            function isBlockRemovable(r, c) {
+              // Check if the position actually contains a blocked tile
+              if (!isBlocked(r, c)) return false;
+              
+              // Create a simulated grid with the block removed
+              const simGrid = cloneGrid(grid);
+              simGrid[r][c] = 0; // Remove the block temporarily
+              
+              // Find all tiles on the board
+              const tiles = [];
+              for (let sr = 0; sr < ROWS; sr++) {
+                for (let sc = 0; sc < COLS; sc++) {
+                  if (simGrid[sr][sc] > 0 || simGrid[sr][sc] === WILDCARD_TILE) {
+                    tiles.push({r: sr, c: sc});
+                  }
+                }
+              }
+              
+              // If there are no tiles, removing the block is always safe
+              if (tiles.length === 0) return true;
+              
+              // Check if all tiles still have at least one valid move after block removal
+              for (const tile of tiles) {
+                if (!hasAnyLegalMove(tile.r, tile.c, simGrid)) {
+                  return false; // This tile would be stuck if we remove this block
+                }
+              }
+              
+              return true; // All tiles still have moves, safe to remove
+            }
+
+            /**
+             * Validates whether a blocked tile can be created at the specified position
+             * without making the game unwinnable
+             * 
+             * @param {number} r - Row index of the cell to check
+             * @param {number} c - Column index of the cell to check
+             * @returns {boolean} - True if a blocked tile can be created, false otherwise
+             */
+            function canCreateBlockedTile(r, c) {
+              // Create a simulated grid with the new blocked tile
+              const simGrid = cloneGrid(grid);
+              simGrid[r][c] = -1;
+              
+              // Find all tiles on the board
+              const tiles = [];
+              for (let sr = 0; sr < ROWS; sr++) {
+                for (let sc = 0; sc < COLS; sc++) {
+                  if (simGrid[sr][sc] > 0 || simGrid[sr][sc] === WILDCARD_TILE) {
+                    tiles.push({r: sr, c: sc});
+                  }
+                }
+              }
+              
+              // Check if all tiles have at least one valid move
+              for (const tile of tiles) {
+                if (!hasAnyLegalMove(tile.r, tile.c, simGrid)) {
+                  return false;
+                }
+              }
+              
+              return true;
+            }
+            
+            /**
+             * Toggles a cell between blocked state and empty state
+             * 
+             * @param {number} r - Row index of the cell to toggle
+             * @param {number} c - Column index of the cell to toggle
+             * @param {boolean} removalOnly - If true, only removal of blocks is allowed, not creation
+             * @returns {boolean} - True if the toggle was successful, false otherwise
+             */
+            function toggleBlockedTile(r, c, removalOnly = false) {
+              if (!inBounds(r, c)) return false;
+              
+              // 블록 제거 모드이면 이미 설치된 블록만 제거할 수 있음
+              if (removalOnly) {
+                if (!isBlocked(r, c)) {
+                  info("블록 제거 모드: 제거할 블록을 선택하세요.", "warn");
+                  return false;
+                }
+                
+                // 블록 제거
+                grid[r][c] = 0;
+                drawCell(r, c);
+                
+                // 블록 제거 횟수 감소 - 블록 제거 모드에서 마다 감소 처리
+                blockRemovalUsesLeft--;
+                updateBlockRemovalButton();
+                
+                // 남은 횟수 없으면 모드 종료
+                if (blockRemovalUsesLeft <= 0) {
+                  blockRemovalMode = false;
+                  info("블록 제거 기능을 모두 사용했습니다. 모드가 종료됩니다.", "warn");
+                  
+                  // 블록 제거 모드 시각 효과 제거
+                  clearRemovableBlocks();
+                  document.body.style.cursor = '';
+                } else {
+                  // 아직 남은 횟수가 있으면 시각화를 다시 업데이트
+                  showRemovableBlocks();
+                }
+                
+                // 효과음 재생
+                sounds.click.currentTime = 0;
+                playSoundSafely(sounds.click);
+                
+                return true;
+              }
+              
+              // 일반 모드에서는 빈 셀이나 블록 셀만 토글 가능
+              if (!(isEmpty(r, c) || isBlocked(r, c))) return false;
+              
+              // Toggle the state
+              const newState = isBlocked(r, c) ? 0 : -1;
+              
+              // 블록 제거 처리
+              if (isBlocked(r, c) && newState === 0) {
+                // 블록 제거 횟수 감소 - 일반 모드에서도 블록 제거시 횟수 차감
+                blockRemovalUsesLeft--;
+                updateBlockRemovalButton();
+                
+                // 남은 횟수 없으면 관련 처리
+                if (blockRemovalUsesLeft <= 0) {
+                  info("블록 제거 기능을 모두 사용했습니다.", "warn");
+                }
+              }
+              
+              // Validate the change won't create an unwinnable state
+              if (newState === -1 && !canCreateBlockedTile(r, c)) {
+                info("블록 설치 불가: 이 위치에 블록을 설치하면 게임이 불가능해집니다.", "err");
+                return false;
+              }
+              
+              // Apply the change
+              grid[r][c] = newState;
+              drawCell(r, c);
+              
+              // Play effect
+              sounds.click.currentTime = 0;
+              playSoundSafely(sounds.click);
+              
+              return true;
+            }
+            function randomValue() {
+                // 와일드카드 타일 등장 확률 확인 (5%)
+                if (Math.random() < WILDCARD_SPAWN_CHANCE) {
+                    return WILDCARD_TILE;
+                }
+                // 기존 일반 타일 로직
+                return [1, 1, 1, 1, 3, 3, 9][(Math.random() * 7) | 0];
+            }
+            
+            // 와일드카드를 제외한 일반 몬스터만 생성하는 함수
+            function randomValueNoWildcard() {
+                // 일반 몬스터만 랜덤 생성 (와일드카드 제외)
+                return [1, 1, 1, 1, 3, 3, 9][(Math.random() * 7) | 0];
+            }
+
+            /* ====== 셀 & 렌더링 ====== */
+            function drawCell(r, c, opt = {}) {
+                const idx = r * COLS + c, cell = board.children[idx];
+                cell.classList.toggle('blocked', isBlocked(r, c));
+                const prev = cell.querySelector('.tile'); if (prev) prev.remove();
+                const v = grid[r][c];
+                if (v > 0 || v === WILDCARD_TILE) {
+                    const t = document.createElement('div');
+                    t.className = 'tile'; t.dataset.val = v;
+                    if (opt.spawn) t.classList.add('spawn');
+                    // 와일드카드 타일은 특별한 효과 추가
+                    if (v === WILDCARD_TILE) {
+                        t.classList.add('wildcard');
+                    }
+                    
+                    // 아이템 보유 표시 - 아이템이 있는 타일은 특별한 효과 추가
+                    if (hasItem(r, c)) {
+                        t.dataset.hasItem = 'true';
+                        // 반짝이는 테두리 효과 추가 (추후 추가 가능)
+                    }
+                    
+                    if (TILE_IMAGES[v]) t.style.backgroundImage = `url(${TILE_IMAGES[v]})`;
+                    cell.appendChild(t);
+                } else if (v === -1) {
+                    const b = document.createElement('div');
+                    b.className = 'tile';
+                    b.style.backgroundImage = "url('images/blocked.png')";
+                    cell.appendChild(b);
+                } else {
+                    const e = document.createElement('div');
+                    e.className = 'tile';
+                    e.style.backgroundImage = "url('images/empty.png')";
+                    cell.appendChild(e);
+                }
+            }
+            function renderAll(spawn = false) {
+                for (let r = 0; r < ROWS; r++)for (let c = 0; c < COLS; c++)
+                    drawCell(r, c, { spawn: spawn && isTile(r, c) });
+                elTurn.textContent = String(turn);
+                elNext.textContent = String(untilSpawn);
+                elMega.textContent = String(MEGA_INTERVAL - (spawnCount % MEGA_INTERVAL || MEGA_INTERVAL));
+                elBlock.textContent = String(blockSpawnTurn);
+            }
+            function highlightSelection() {
+                for (const cell of board.children) {
+                    const t = cell.querySelector('.tile'); if (t) t.classList.remove('sel');
+                }
+                if (selected) {
+                    const tile = board.children[selected.r * COLS + selected.c].querySelector('.tile');
+                    if (tile) tile.classList.add('sel');
+                }
+            }
+            
+            /* ====== 이동 가능 위치 표시 기능 추가 ====== */
+                        function clearPossibleMoves() {
+                            // 모든 'possible-move' 클래스를 제거하여 하이라이트를 끔
+                            board.querySelectorAll('.possible-move').forEach(el => el.classList.remove('possible-move'));
+                            // 경로 하이라이트도 함께 제거
+                            board.querySelectorAll('.path-highlight').forEach(el => el.classList.remove('path-highlight'));
+                        }
+
+            /* ====== 제거 가능한 블록 표시 기능 ====== */
+                        function showRemovableBlocks() {
+                            // 모든 블록 타일을 순회하며 제거 가능 여부 확인
+                            for (let r = 0; r < ROWS; r++) {
+                                for (let c = 0; c < COLS; c++) {
+                                    if (isBlocked(r, c)) {
+                                        const cellIndex = r * COLS + c;
+                                        const cell = board.children[cellIndex];
+                                        
+                                        if (isBlockRemovable(r, c)) {
+                                            // 제거 가능한 블록 - 초록색 강조
+                                            cell.classList.add('removable-block');
+                                            cell.classList.remove('non-removable-block');
+                                        } else {
+                                            // 제거 불가능한 블록 - 회색 처리
+                                            cell.classList.add('non-removable-block');
+                                            cell.classList.remove('removable-block');
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 모드 활성화 표시 추가
+                            document.getElementById('btnBlockRemoval').style.background = "#2a4d6e";
+                            document.getElementById('btnBlockRemoval').style.borderColor = "#46d3ff";
+                            document.getElementById('btnBlockRemoval').style.boxShadow = "0 0 8px rgba(70, 211, 255, 0.5)";
+                        }
+
+                        function clearRemovableBlocks() {
+                            // 모든 블록 관련 하이라이트 클래스 제거
+                            board.querySelectorAll('.removable-block').forEach(el => el.classList.remove('removable-block'));
+                            board.querySelectorAll('.non-removable-block').forEach(el => el.classList.remove('non-removable-block'));
+                            
+                            // 모드 비활성화 시 버튼 스타일 복원
+                            const btn = document.getElementById('btnBlockRemoval');
+                            if (btn) {
+                                btn.style.background = "#121722";
+                                btn.style.borderColor = "#2a3443";
+                                btn.style.boxShadow = "none";
+                            }
+                        }
+
+                        function showPossibleMoves(r, c) {
+                            // 선택한 블록의 정보를 가져옴
+                            const val = grid[r][c];
+                            // 현재 타일과 연결된 모든 타일을 찾기 위해 maxSize를 Infinity로 설정
+                            const currentGroup = floodSame(r, c, val, grid, Infinity);
+
+                            // 모든 비어있는 칸을 순회하며 이동 가능 여부 확인
+                            for (let tr = 0; tr < ROWS; tr++) {
+                                for (let tc = 0; tc < COLS; tc++) {
+                                    if (!isEmpty(tr, tc)) continue;
+
+                                    const to = { r: tr, c: tc };
+                                    const from = { r, c };
+                                    
+                                    // 기존 이동 로직의 유효성 검사 조건들을 그대로 사용
+                                    const path = findPathViaEmpties(from, to);
+                                    if (!path) continue;
+
+                                    // 와일드카드 타일은 특별한 처리
+                                    const gsize = groupSizeIfMoved(from, to, val);
+                                    if (gsize < 2) continue;
+
+                                    // 현재 2개 그룹을 분리하는 경우, 3매칭이 되어야 함
+                                    // 와일드카드 예외: 와일드카드는 2개 이상의 그룹을 형성할 수 있으면 2그룹에서도 이동 가능
+                                    if (currentGroup.length === 2 && gsize < 3) {
+                                        // 와일드카드 예외 처리: 와일드카드는 2그룹 이상 형성하면 이동 허용
+                                        if (val === WILDCARD_TILE && gsize >= 2) {
+                                            // 와일드카드 예외 적용: 이동 허용
+                                        } else {
+                                            continue; // 일반 타일은 기존 규칙 적용
+                                        }
+                                    }
+
+                                    // 모든 조건을 통과하면 'possible-move' 클래스를 추가하여 하이라이트
+                                    board.children[tr * COLS + tc].classList.add('possible-move');
+                                }
+                            }
+                        }
+
+            /* ====== 초기화 ====== */
+            function init() {
+                askPlayerId();
+                board.innerHTML = '';
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell'; cell.dataset.r = r; cell.dataset.c = c;
+                        cell.addEventListener('click', onTapCell);
+                        board.appendChild(cell);
+                    }
+                }
+                // 블록 제거 모드 초기화
+                blockRemovalMode = false;
+                blockRemovalUsesLeft = 3;
+                updateBlockRemovalButton();
+                
+                // 모든 버튼 초기 상태 설정 (사용 횟수 표시)
+                updateAllButtons();
+                
+                newGame();
+                // 모든 버튼 상태 업데이트 (사용 횟수 표시)
+                updateAllButtons();
+                document.getElementById('btnRestart').addEventListener('click', () => {
+                    popup.classList.remove('show'); newGame();
+                });
+                document.getElementById('btnBack').addEventListener('click', () => { popup.classList.remove('show'); });
+                document.getElementById('btnViewBest').addEventListener('click', () => {
+                    if (bestGameState) { renderMiniPopup(bestGameState, playerId, bestScore); }
+                    else alert("아직 최고 기록이 없습니다.");
+                });
+                document.getElementById('btnNew').addEventListener('click', () => { newGame(); });
+                document.getElementById('btnUndo').addEventListener('click', undoMove);
+                document.getElementById('btnResetId').addEventListener('click', () => { askPlayerId(true); });
+
+                // 🔥 여기 추가
+                document.getElementById('btnRankManual').addEventListener('click', () => {
+                    popup.classList.add('show');  // 팝업을 강제로 보여주기
+                    rankingsEl.innerHTML = "<div style='padding:10px'>랭킹을 불러오는중...</div>";
+                    loadRanking();
+                });
+
+                // 블록 제거 모드 버튼 설정
+                document.getElementById('btnBlockRemoval').addEventListener('click', toggleBlockRemovalMode);
+                
+                // 몬스터 소환 버튼 설정
+                document.getElementById('btnSpawnMonster').addEventListener('click', function() {
+                    // 애니메이션 진행 중에는 입력 무시
+                    if (isAnimating) {
+                        info("애니메이션이 진행 중입니다. 잠시 후 다시 시도하세요.", "warn");
+                        return;
+                    }
+                    
+                    // 현재 상태 저장
+                    saveSnapshot();
+                    
+                    // 몬스터 소환
+                    spawnMonsterOnly();
+                });
+                
+                // 조커 소환 버튼 설정
+                document.getElementById('btnSpawnWildcard').addEventListener('click', function() {
+                    // 애니메이션 진행 중에는 입력 무시
+                    if (isAnimating) {
+                        info("애니메이션이 진행 중입니다. 잠시 후 다시 시도하세요.", "warn");
+                        return;
+                    }
+                    
+                    // 현재 상태 저장
+                    saveSnapshot();
+                    
+                    // 조커 소환
+                    spawnWildcardOnly();
+                });
+                
+                // updateBlockRemovalButton 함수는 전역으로 옮겼습니다
+                
+                // 보상 옵션 이벤트 핸들러 초기화
+                initRewardHandlers();
+                
+                // 블록 제거 모드 토글 함수
+                function toggleBlockRemovalMode() {
+                    // 남은 사용 횟수가 없으면 모드 활성화 불가
+                    if (blockRemovalUsesLeft <= 0) {
+                        info("블록 제거 기능을 모두 사용했습니다.", "err");
+                        return;
+                    }
+                    
+                    blockRemovalMode = !blockRemovalMode;
+                    
+                    if (blockRemovalMode) {
+                        info("블록 제거 모드가 활성화되었습니다. 초록색으로 표시된 제거 가능한 블록을 클릭하세요.");
+                        
+                        // 선택 상태 초기화
+                        selected = null;
+                        highlightSelection();
+                        clearPossibleMoves();
+                        
+                        // 제거 가능한 블록들을 시각적으로 표시
+                        showRemovableBlocks();
+                        
+                        // 커서 변경
+                        document.body.style.cursor = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2346d3ff\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cline x1=\'18\' y1=\'6\' x2=\'6\' y2=\'18\'%3E%3C/line%3E%3Cline x1=\'6\' y1=\'6\' x2=\'18\' y2=\'18\'%3E%3C/line%3E%3C/svg%3E") 16 16, pointer';
+                    } else {
+                        info("블록 제거 모드를 종료합니다.");
+                        
+                        // 블록 시각화 효과 제거
+                        clearRemovableBlocks();
+                        document.body.style.cursor = '';
+                    }
+                    
+                    updateBlockRemovalButton();
+                }
+
+            }
+
+            // 경로 하이라이트 함수들
+            function highlightPath(path) {
+                if (!path || path.length < 2) return;
+                
+                // 시작점과 끝점을 제외한 중간 경로만 하이라이트
+                for (let i = 1; i < path.length - 1; i++) {
+                    const cell = board.children[path[i].r * COLS + path[i].c];
+                    if (cell) {
+                        cell.classList.add('path-highlight');
+                    }
+                }
+            }
+
+            function clearPathHighlight() {
+                board.querySelectorAll('.path-highlight').forEach(el => {
+                    el.classList.remove('path-highlight');
+                });
+            }
+
+            /* ====== 이동 ====== */
+            function onTapCell() {
+                            // 애니메이션 진행 중에는 입력 무시
+                            if (isAnimating) return;
+                            
+                            const r = +this.dataset.r, c = +this.dataset.c;
+
+                            // 함수 시작 시, 이전 하이라이트를 모두 제거
+                            clearPossibleMoves();
+                            
+                            // 블록 제거 모드인 경우 전용 로직 처리
+                            if (blockRemovalMode) {
+                                // 블록이 아닌 경우 경고
+                                if (!isBlocked(r, c)) {
+                                    info("블록 제거 모드: 제거할 블록을 선택하세요.", "warn");
+                                    return;
+                                }
+                                
+                                // 제거 불가능한 블록인 경우 경고
+                                if (!isBlockRemovable(r, c)) {
+                                    info("이 블록을 제거하면 게임이 불가능해집니다. 다른 블록을 선택하세요.", "err");
+                                    return;
+                                }
+                                
+                                // 제거 가능한 블록만 제거
+                                if (toggleBlockedTile(r, c, true)) {
+                                    // 블록 제거 성공
+                                    return;
+                                }
+                                return;
+                            }
+                            
+                            // 일반 모드에서는 블록 타일 생성/제거 불가능하도록 수정
+                            // 블록 제거는 블록 제거 모드에서만 가능하도록 함
+                            if (selected === null && (isEmpty(r, c) || isBlocked(r, c))) {
+                                // toggleBlockedTile 기능 비활성화 (블록 제거 모드에서만 가능)
+                                if (isBlocked(r, c)) {
+                                    info("블록을 제거하려면 블록 제거 모드를 활성화하세요.", "warn");
+                                }
+                                return;
+                            }
+
+                            if (isTile(r, c)) {
+                                selected = { r, c };
+                                highlightSelection();
+                                
+                                // 선택된 블록 기준으로 이동 가능한 위치를 표시
+                                showPossibleMoves(r, c);
+                                
+                                // 🎵 클릭음
+                                sounds.click.currentTime = 0;
+                                playSoundSafely(sounds.click);
+                                return;
+                            }
+                            if (isEmpty(r, c) && selected) {
+                                const from = { ...selected }, to = { r, c }, val = grid[from.r][from.c];
+                                
+                                // 향상된 이동 검증 함수 사용
+                                const validation = validateMergeMove(from, to, val);
+                                
+                                if (!validation.valid) {
+                                    info(validation.reasons.join("\n"), "err"); 
+                                    return;
+                                }
+                                
+                                const path = findPathViaEmpties(from, to);
+                                const gsize = validation.groupSize;
+                                
+                                // 이동하기 전 현재 상태를 저장
+                                saveSnapshot();
+
+                    // 애니메이션 시작
+                    isAnimating = true;
+                    
+                    // 애니메이션으로 이동
+                    animateMoveTile(from, to, path, () => {
+                        // 애니메이션 완료 후 게임 로직 처리
+                        if (gsize >= 3) {
+                            // 🎵 머지 사운드 전용
+                            const mergeResult = resolveAutoMerges(to);
+                            
+                            // 병합 후 보상 조건 확인 및 팝업 표시
+                            // if (shouldShowReward(mergeResult)) {
+                            //     // 약간의 지연 후 팝업 표시 (애니메이션이 완료된 후)
+                            //     setTimeout(() => {
+                            //         showRewardPopup();
+                            //     }, 700); // 병합 애니메이션 완료 후 적당한 시간 지연
+                            // }
+                        } else {
+                            // 🎵 이동 사운드 (머지 아닐 때만)
+                            sounds.move.currentTime = 0;
+                            playSoundSafely(sounds.move);
+                        }
+
+                        turn++; untilSpawn--; blockSpawnTurn--;
+                        if (untilSpawn === 0) { spawnBatch(); untilSpawn = SPAWN_EVERY; }
+                        if (blockSpawnTurn === 0) { spawnBlock(); blockSpawnTurn = BLOCK_SPAWN_INTERVAL; }
+                        // saveSnapshot 호출은 모든 처리가 완료된 후 한 번만 수행됨
+                        elTurn.textContent = String(turn);
+                        elNext.textContent = String(untilSpawn);
+                        elBlock.textContent = String(blockSpawnTurn);
+                        selected = null; 
+                        highlightSelection();
+                        clearPossibleMoves();
+                        
+                        // 애니메이션 완료
+                        isAnimating = false;
+                        
+                        // 이동 처리가 완료되었지만 이동 전 상태는 이미 저장되어 있음
+                        
+                        checkGameOverSoon();
+                    });
+                }
+            }
+
+            // 경로를 따라 애니메이션으로 이동하는 함수 (새로운 방식)
+            function animateMoveTile(from, to, path, callback) {
+                console.log('애니메이션 시작:', from, '→', to, '경로 길이:', path ? path.length : 0);
+                const v = grid[from.r][from.c];
+                const fromCell = board.children[from.r * COLS + from.c];
+                const fromTile = fromCell.querySelector('.tile');
+                
+                if (!fromTile || !path || path.length < 2) {
+                    moveTileInstant(from, to);
+                    if (callback) callback();
+                    return;
+                }
+
+                // 타일 복사본 생성
+                const animatingTile = fromTile.cloneNode(true);
+                animatingTile.classList.add('moving');
+                
+                // 경로 하이라이트
+                highlightPath(path);
+                
+                // 그리드 상태 업데이트
+                grid[from.r][from.c] = 0;
+                grid[to.r][to.c] = v;
+                
+                // 원본 타일을 즉시 숨기고 빈 셀로 표시
+                fromTile.style.visibility = 'hidden';
+                drawCell(from.r, from.c);
+                
+                // 보드에 애니메이션 타일 추가
+                board.appendChild(animatingTile);
+                
+                // 시작 위치 설정
+                setTilePosition(animatingTile, path[0]);
+                
+                // 경로를 따라 이동
+                animateStepByStep(animatingTile, path, 0, () => {
+                    // 애니메이션 완료
+                    animatingTile.remove();
+                    drawCell(to.r, to.c);
+                    clearPathHighlight();
+                    
+                    const finalTile = board.children[to.r * COLS + to.c].querySelector('.tile');
+                    if (finalTile) { 
+                        finalTile.classList.add('bump'); 
+                        setTimeout(() => finalTile.classList.remove('bump'), 200); 
+                    }
+                    
+                    if (callback) callback();
+                });
+            }
+
+            // 타일을 특정 그리드 위치에 배치 (transform 방식)
+            function setTilePosition(tile, gridPos) {
+                const targetCell = board.children[gridPos.r * COLS + gridPos.c];
+                const rect = targetCell.getBoundingClientRect();
+                const boardRect = board.getBoundingClientRect();
+                
+                tile.style.position = 'absolute';
+                tile.style.left = (rect.left - boardRect.left) + 'px';
+                tile.style.top = (rect.top - boardRect.top) + 'px';
+                tile.style.width = targetCell.offsetWidth + 'px';
+                tile.style.height = targetCell.offsetHeight + 'px';
+                tile.style.transition = 'none';
+            }
+
+            // 단계별 이동 애니메이션 (transform 방식)
+            function animateStepByStep(tile, path, currentStep, callback) {
+                if (currentStep >= path.length - 1) {
+                    if (callback) callback();
+                    return;
+                }
+
+                const nextPos = path[currentStep + 1];
+                const targetCell = board.children[nextPos.r * COLS + nextPos.c];
+                const rect = targetCell.getBoundingClientRect();
+                const boardRect = board.getBoundingClientRect();
+                
+                // CSS transition 설정 (아주 조금 더 빠르게)
+                tile.style.transition = 'left 100ms ease-out, top 100ms ease-out';
+                
+                // 다음 위치로 이동
+                tile.style.left = (rect.left - boardRect.left) + 'px';
+                tile.style.top = (rect.top - boardRect.top) + 'px';
+                
+                // 다음 단계로 이동 (아주 조금 더 빠르게)
+                setTimeout(() => {
+                    animateStepByStep(tile, path, currentStep + 1, callback);
+                }, 100);
+            }
+
+            // 즉시 이동 (기존 로직)
+            function moveTileInstant(from, to) {
+                const v = grid[from.r][from.c];
+                grid[from.r][from.c] = 0; grid[to.r][to.c] = v;
+                
+                // 아이템 정보 이동
+                moveItem(from.r, from.c, to.r, to.c);
+                
+                drawCell(from.r, from.c); drawCell(to.r, to.c);
+                const tCell = board.children[to.r * COLS + to.c].querySelector('.tile');
+                if (tCell) { tCell.classList.add('bump'); setTimeout(() => tCell.classList.remove('bump'), 200); }
+            }
+
+            function moveTile(from, to) {
+                // 기본적으로 즉시 이동 (하위 호환성)
+                moveTileInstant(from, to);
+            }
+
+            /* ====== 경로 탐색 ====== */
+            function findPathViaEmpties(from, to) {
+                const q = [from], prev = Array.from({ length: ROWS }, () => Array(COLS).fill(null)), vis = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+                vis[from.r][from.c] = true;
+                const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                while (q.length) {
+                    const cur = q.shift();
+                    for (const [dr, dc] of dirs) {
+                        const nr = cur.r + dr, nc = cur.c + dc;
+                        if (!inBounds(nr, nc) || vis[nr][nc]) continue;
+                        if (nr === to.r && nc === to.c) { if (!isEmpty(nr, nc)) continue; }
+                        else if (isBlocked(nr, nc) || isTile(nr, nc)) continue;
+                        vis[nr][nc] = true; prev[nr][nc] = cur;
+                        if (nr === to.r && nc === to.c) {
+                            const path = []; let x = { r: nr, c: nc };
+                            while (x) { path.push(x); x = prev[x.r][x.c]; }
+                            path.reverse(); return path;
+                        }
+                        q.push({ r: nr, c: nc });
+                    }
+                }
+                return null;
+            }
+            function destAdjacentSame(to, val) {
+                return [[1, 0], [-1, 0], [0, 1], [0, -1]].
+                    some(([dr, dc]) => {
+                        const nr = to.r + dr, nc = to.c + dc;
+                        if (!inBounds(nr, nc)) return false;
+                        
+                        const neighborValue = grid[nr][nc];
+                        
+                        // 빈 셀이나 블록된 셀은 제외
+                        if (neighborValue === 0 || neighborValue === -1) return false;
+                        
+                        // 와일드카드 로직: 
+                        // 1. 인접 타일이 와일드카드이거나
+                        // 2. 현재 타일이 와일드카드이거나
+                        // 3. 같은 값이면 매치 가능
+                        return neighborValue === WILDCARD_TILE || val === WILDCARD_TILE || neighborValue === val;
+                    });
+            }
+            // 향상된 floodSame 함수: 변수 그룹 크기 지원, 와일드카드 값 제한(9 이하), 일관된 순서 보장
+            function floodSame(sr, sc, val, g = grid, maxSize = 3) { // maxSize 매개변수 추가 (기본값 3)
+                // BFS 방식으로 구현하여 일관된 순서 보장
+                const vis = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+                const q = [{ r: sr, c: sc }];
+                const out = [];
+                let wildcardCount = 0;
+                let firstNonWildcardValue = null; // 추가: 처음 발견된 일반 타일 값 추적
+                
+                // 시작 타일 값 확인
+                const startingValue = g[sr][sc];
+                const startIsWildcard = startingValue === WILDCARD_TILE;
+                
+                // 첫 타일이 일반 타일이면 해당 값 저장
+                if (!startIsWildcard) {
+                    firstNonWildcardValue = startingValue;
+                }
+                
+                // 첫 타일 처리
+                vis[sr][sc] = true;
+                
+                // BFS 로직
+                while (q.length > 0) {
+                    const { r, c } = q.shift();
+                    const tileValue = g[r][c];
+                    
+                    // 타일 정보를 저장하고 와일드카드 개수 확인
+                    out.push({ r, c, value: tileValue });
+                    if (tileValue === WILDCARD_TILE) {
+                        wildcardCount++;
+                    } else if (firstNonWildcardValue === null) {
+                        // 첫 번째 일반 타일 값 저장
+                        firstNonWildcardValue = tileValue;
+                    }
+                    
+                    // 최대 그룹 크기 제한 (3개 이상은 찾지 않음)
+                    if (out.length >= maxSize) {
+                        break; // 최대 크기에 도달하면 반복문 종료
+                    }
+                    
+                    // 4방향 체크 (상하좌우)
+                    for (const [dr, dc] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+                        const nr = r + dr, nc = c + dc;
+                        
+                        // 유효성 검사 + 방문 여부 확인
+                        if (!inBounds(nr, nc) || vis[nr][nc]) continue;
+                        
+                        const neighborTileValue = g[nr][nc];
+                        const neighborIsWildcard = neighborTileValue === WILDCARD_TILE;
+                        const neighborIsValidTile = neighborTileValue > 0 || neighborIsWildcard;
+                        
+                        // 이웃 타일이 유효한 타일이 아니면 건너뜀
+                        if (!neighborIsValidTile) continue;
+                        
+                        // 개선된 시나리오 체크
+                        // 1. 일반 타일이 같은 값인 경우 매치
+                        // 2. 와일드카드 매칭 규칙 (같은 값의 타일들과만 매치):
+                        //    - 모든 타일이 와일드카드인 경우 (그룹이 와일드카드로만 구성)
+                        //    - 이웃 타일이 와일드카드이고, 현재 타일이 첫 비와일드카드 값과 같은 경우
+                        //    - 현재 타일이 와일드카드이고, 이웃 타일이 첫 비와일드카드 값과 같은 경우
+                        
+                        const currentTileIsWildcard = tileValue === WILDCARD_TILE;
+                        const normalMatch = neighborTileValue === val;
+                        
+                        // 와일드카드 매칭 로직
+                        // 와일드카드는 9 이하의 타일에만 작동하도록 제한
+                        let wildcardMatch = false;
+                        
+                        // 모든 타일이 와일드카드인 경우
+                        if (firstNonWildcardValue === null) {
+                            wildcardMatch = true;
+                        }
+                        // 이웃이 와일드카드인 경우
+                        else if (neighborIsWildcard && !currentTileIsWildcard) {
+                            // 현재 타일이 첫 비와일드카드 값과 같고, 값이 9 이하인 경우만 매칭
+                            wildcardMatch = tileValue === firstNonWildcardValue && firstNonWildcardValue <= 9;
+                        }
+                        // 현재가 와일드카드인 경우
+                        else if (currentTileIsWildcard && !neighborIsWildcard) {
+                            // 이웃 타일이 첫 비와일드카드 값과 같고, 값이 9 이하인 경우만 매칭
+                            wildcardMatch = neighborTileValue === firstNonWildcardValue && firstNonWildcardValue <= 9;
+                        }
+                        // 둘 다 와일드카드인 경우
+                        else if (currentTileIsWildcard && neighborIsWildcard) {
+                            wildcardMatch = true;
+                        }
+                        
+                        if (normalMatch || wildcardMatch) {
+                            vis[nr][nc] = true;
+                            q.push({ r: nr, c: nc });
+                        }
+                    }
+                }
+                
+                // 결과에 그룹 메타데이터 추가
+                out.size = out.length;
+                out.wildcardCount = wildcardCount;
+                out.value = val;
+                out.pivot = out.length > 0 ? { r: out[0].r, c: out[0].c } : null;
+                
+                return out;
+            }
+            function groupSizeIfMoved(from, to, val) {
+                const tmp = cloneGrid(grid);
+                tmp[from.r][from.c] = 0; tmp[to.r][to.c] = val;
+                // 지정된 위치에 타일을 이동한 후 그룹 크기 검사
+                // 그룹 크기 3개로 제한하여 조회
+                return floodSame(to.r, to.c, val, tmp, 3).length;
+            }
+            /* ====== 보드 생성 & 새게임 ====== */
+            function makeGrid() { return Array.from({ length: ROWS }, () => Array(COLS).fill(0)); }
+
+            function newGame() {
+                popupTitle.textContent = "게임 오버";
+                grid = makeGrid();
+                clearItems(); // 아이템 초기화
+                placeRandomBlocks(-1, BLOCK_MIN + ((Math.random() * (BLOCK_MAX - BLOCK_MIN + 1)) | 0));
+                placeRandomTilesAvoidingTriples(INIT_TILES, 400);
+                
+                // 초기 타일에는 아이템을 부여하지 않음
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (grid[r][c] > 0 || grid[r][c] === WILDCARD_TILE) {
+                            setItem(r, c, false);
+                        }
+                    }
+                }
+                
+                renderAll(true);
+                requestAnimationFrame(() => { 
+                    const mergeResult = resolveAutoMerges(); 
+                    /* saveSnapshot() 제거 - 게임 초기화 시에는 스냅샷을 저장하지 않음 */ 
+                    
+                    // 게임 시작 시에도 보상 팝업 확인
+                    if (shouldShowReward(mergeResult)) {
+                        setTimeout(() => {
+                            showRewardPopup();
+                        }, 700);
+                    }
+                });
+                turn = 0; untilSpawn = SPAWN_EVERY; spawnCount = 0; blockSpawnTurn = BLOCK_SPAWN_INTERVAL; selected = null; gameOverShown = false;
+                blockRemovalMode = false; blockRemovalUsesLeft = 3; // 블록 제거 모드 및 횟수 초기화
+                history = []; // 히스토리 초기화
+                
+                // 기능 사용 횟수 초기화
+                undoUsesLeft = 3;
+                monsterSpawnUsesLeft = 5;
+                wildcardSpawnUsesLeft = 2;
+                
+                // 모든 버튼 상태 업데이트 (사용 횟수 표시)
+                updateAllButtons();
+                elTurn.textContent = '0'; elNext.textContent = String(SPAWN_EVERY); elBlock.textContent = String(BLOCK_SPAWN_INTERVAL);
+                // 초기 화면에서 블록 생성 턴 표시
+                updateBlockRemovalButton(); // 블록 제거 버튼 업데이트
+                popup.classList.remove('show');
+                checkGameOverSoon();
+            }
+
+            /* ====== 소환 ====== */
+            function placeRandomBlocks(v, count) {
+                const E = listEmpty(); shuffle(E);
+                for (let i = 0; i < count && i < E.length; i++) grid[E[i].r][E[i].c] = v;
+            }
+            function placeRandomTilesAvoidingTriples(count, maxTry = 200) {
+                let placed = 0, tries = 0;
+                while (placed < count && tries < maxTry) {
+                    const E = listEmpty(); if (!E.length) break;
+                    const p = E[(Math.random() * E.length) | 0], v = randomValue();
+                    grid[p.r][p.c] = v;
+                    if (findAnyGroupGE3()) { 
+                        grid[p.r][p.c] = 0; 
+                        setItem(p.r, p.c, false); // 제거한 타일은 아이템 제거
+                    } else { 
+                        placed++; 
+                        setItem(p.r, p.c, false); // 게임 초기 타일에는 아이템을 부여하지 않음
+                    }
+                    tries++;
+                }
+                if (placed < count) placeRandomTiles(count - placed);
+            }
+            function placeRandomTiles(count) {
+                const E = listEmpty(); shuffle(E);
+                for (let i = 0; i < count && i < E.length; i++) {
+                    grid[E[i].r][E[i].c] = randomValue();
+                    setItem(E[i].r, E[i].c, false); // 게임 초기 타일에는 아이템을 부여하지 않음
+                }
+            }
+            function spawnBatch() {
+                spawnCount++;
+                if (spawnCount % MEGA_INTERVAL === 0) {
+                    info("🌟 대소환! 블록 2배 소환!");
+                    for (let i = 0; i < SPAWN_BATCH * 2; i++) spawnOne();
+                } else {
+                    for (let i = 0; i < SPAWN_BATCH; i++) spawnOne();
+                }
+                elMega.textContent = String(MEGA_INTERVAL - (spawnCount % MEGA_INTERVAL || MEGA_INTERVAL));
+            }
+            
+            // 방해 블록 생성 함수
+            function spawnBlock() {
+                info("⚠️ 경고! 방해 블록이 나타납니다!", "warn");
+                
+                // 블록 생성을 위한 빈 셀 목록 가져오기
+                const emptyCells = listEmpty();
+                if (!emptyCells.length) return false; // 빈 셀이 없으면 생성 실패
+                
+                // 유효한 생성 위치 찾기 (게임이 불가능해지는 위치에는 생성하지 않음)
+                shuffle(emptyCells);
+                
+                for (const cell of emptyCells) {
+                    // 이 위치에 블록을 생성해도 게임이 가능한지 확인
+                    if (canCreateBlockedTile(cell.r, cell.c)) {
+                        // 블록 생성
+                        grid[cell.r][cell.c] = -1;
+                        drawCell(cell.r, cell.c, { spawn: true });
+                        
+                        // 효과음 재생
+                        sounds.block.currentTime = 0;
+                        playSoundSafely(sounds.block);
+                        
+                        // 파티클 효과 표시
+                        const cellElement = board.children[cell.r * COLS + cell.c];
+                        const rect = cellElement.getBoundingClientRect();
+                        createParticles(rect.left + rect.width/2, rect.top + rect.height/2, 15, 1.2);
+                        
+                        return true;
+                    }
+                }
+                
+                // 적합한 위치를 찾지 못함 - 이번에는 블록 생성 건너뜀고 알림
+                info("이번 턴에는 방해 블록 생성을 건너뜁니다.", "warn");
+                return false;
+            }
+            function spawnOne() {
+                const E = listEmpty(); if (!E.length) return false;
+                const p = E[(Math.random() * E.length) | 0];
+                grid[p.r][p.c] = randomValue();
+                
+                // 자연 소환된 몬스터에는 아이템 부여
+                setItem(p.r, p.c, true);
+                
+                drawCell(p.r, p.c, { spawn: true });
+                const mergeResult = resolveAutoMerges();
+                
+                // 병합 후 보상 조건 확인 및 팝업 표시
+                if (shouldShowReward(mergeResult)) {
+                    setTimeout(() => {
+                        showRewardPopup();
+                    }, 700);
+                }
+                return true;
+            }
+            
+            // 몬스터만 랜덤 소환하는 함수 (조커 제외)
+            function spawnMonsterOnly() {
+                // 남은 횟수 확인
+                if (monsterSpawnUsesLeft <= 0) {
+                    info("몬스터 소환 기능을 모두 사용했습니다.", "err");
+                    return false;
+                }
+                
+                const E = listEmpty(); 
+                if (!E.length) {
+                    info("더 이상 몬스터를 소환할 공간이 없습니다.", "err");
+                    return false;
+                }
+                
+                const p = E[(Math.random() * E.length) | 0];
+                grid[p.r][p.c] = randomValueNoWildcard();
+                
+                // 기능으로 소환된 몬스터는 아이템을 가지지 않음
+                setItem(p.r, p.c, false);
+                
+                drawCell(p.r, p.c, { spawn: true });
+                
+                // 소환 효과음 재생
+                sounds.move.currentTime = 0;
+                playSoundSafely(sounds.move);
+                
+                // 파티클 효과 표시
+                const cellElement = board.children[p.r * COLS + p.c];
+                const rect = cellElement.getBoundingClientRect();
+                createParticles(rect.left + rect.width/2, rect.top + rect.height/2, 10, 1.0);
+                
+                // 사용 횟수 차감 및 버튼 업데이트
+                monsterSpawnUsesLeft--;
+                updateMonsterSpawnButton();
+                
+                // 병합 가능한 그룹이 있는지 확인
+                const mergeResult = resolveAutoMerges();
+                
+                // 병합 후 보상 조건 확인 및 팝업 표시
+                if (shouldShowReward(mergeResult)) {
+                    setTimeout(() => {
+                        showRewardPopup();
+                    }, 700);
+                }
+                
+                // 게임 오버 체크
+                checkGameOverSoon();
+                
+                return true;
+            }
+            
+            // 조커(와일드카드)만 소환하는 함수
+            function spawnWildcardOnly() {
+                // 남은 횟수 확인
+                if (wildcardSpawnUsesLeft <= 0) {
+                    info("조커 소환 기능을 모두 사용했습니다.", "err");
+                    return false;
+                }
+                
+                const E = listEmpty();
+                if (!E.length) {
+                    info("더 이상 조커를 소환할 공간이 없습니다.", "err");
+                    return false;
+                }
+                
+                const p = E[(Math.random() * E.length) | 0];
+                grid[p.r][p.c] = WILDCARD_TILE; // 와일드카드 타일 값 설정
+                
+                // 기능으로 소환된 와일드카드는 아이템을 가지지 않음
+                setItem(p.r, p.c, false);
+                
+                drawCell(p.r, p.c, { spawn: true });
+                
+                // 특별 효과음 재생 (메가 머지 효과음 사용)
+                sounds.special.megaMerge.currentTime = 0;
+                playSoundSafely(sounds.special.megaMerge);
+                
+                // 화려한 파티클 효과 표시
+                const cellElement = board.children[p.r * COLS + p.c];
+                const rect = cellElement.getBoundingClientRect();
+                createParticles(rect.left + rect.width/2, rect.top + rect.height/2, 20, 1.5);
+                
+                // 화면 번심 효과
+                const flash = document.createElement('div');
+                flash.className = 'screen-flash';
+                document.body.appendChild(flash);
+                setTimeout(() => flash.remove(), 300);
+                
+                // 사용 횟수 차감 및 버튼 업데이트
+                wildcardSpawnUsesLeft--;
+                updateWildcardSpawnButton();
+                
+                // 병합 가능한 그룹이 있는지 확인
+                const mergeResult = resolveAutoMerges();
+                
+                // 병합 후 보상 조건 확인 및 팝업 표시
+                if (shouldShowReward(mergeResult)) {
+                    setTimeout(() => {
+                        showRewardPopup();
+                    }, 700);
+                }
+                
+                // 게임 오버 체크
+                checkGameOverSoon();
+                
+                info("✨ 조커 몬스터가 소환되었습니다!");
+                
+                return true;
+            }
+
+            /* ====== 머지 ====== */
+            // 모든 병합 가능한 그룹을 찾는 함수
+            function findMergeGroups(g = grid, minGroupSize = 3) {
+                const seen = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+                const mergeGroups = [];
+                
+                // 와일드카드 처리를 위해 우선 와일드카드 타일을 먼저 찾는다
+                const wildcardPositions = [];
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (g[r][c] === WILDCARD_TILE) {
+                            wildcardPositions.push({r, c});
+                        }
+                    }
+                }
+                
+                // 와일드카드가 있으면 먼저 처리
+                for (const wildPos of wildcardPositions) {
+                    if (seen[wildPos.r][wildPos.c]) continue;
+                    
+                    // 와일드카드 기준으로 그룹 찾기 - 최대 크기 제한 없이 탐색
+                    const group = floodSame(wildPos.r, wildPos.c, WILDCARD_TILE, g, Infinity);
+                    
+                    // 그룹의 모든 타일을 방문 처리
+                    for (const p of group) {
+                        seen[p.r][p.c] = true;
+                    }
+                    
+                    // 최소 그룹 크기 이상인 경우만 저장
+                    if (group.length >= minGroupSize) {
+                        mergeGroups.push({
+                            tiles: group,
+                            value: WILDCARD_TILE,
+                            wildcardCount: group.wildcardCount || 0,
+                            size: group.length,
+                            pivot: group.pivot || group[0],
+                            isWildcardGroup: true
+                        });
+                    }
+                }
+                
+                // 나머지 일반 타일 처리
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const v = g[r][c]; 
+                        
+                        // 빈 셀이나 이미 확인한 셀은 건너뛰기
+                        if ((v <= 0 && v !== WILDCARD_TILE) || seen[r][c]) continue;
+                        
+                        // 현재 셀에서 같은 값 또는 와일드카드로 연결된 그룹 찾기
+                        const group = floodSame(r, c, v, g);
+                        
+                        // 그룹의 모든 타일을 방문 처리
+                        for (const p of group) {
+                            seen[p.r][p.c] = true;
+                        }
+                        
+                        // 최소 그룹 크기 이상인 경우만 저장
+                        if (group.length >= minGroupSize) {
+                            // 그룹 정보 정리
+                            mergeGroups.push({
+                                tiles: group,
+                                value: v,
+                                wildcardCount: group.wildcardCount || 0,
+                                size: group.length,
+                                pivot: group.pivot || group[0],
+                                isWildcardGroup: false
+                            });
+                        }
+                    }
+                }
+                
+                // 그룹을 우선순위에 따라 정렬
+                mergeGroups.sort((a, b) => {
+                    // 와일드카드가 포함된 그룹 우선
+                    if (a.wildcardCount > 0 && b.wildcardCount === 0) return -1;
+                    if (a.wildcardCount === 0 && b.wildcardCount > 0) return 1;
+                    
+                    // 와일드카드 수가 같으면 그룹 크기가 큰 것 우선
+                    if (a.wildcardCount === b.wildcardCount) {
+                        if (a.size !== b.size) return b.size - a.size;
+                    }
+                    
+                    // 그 외에는 값이 큰 것 우선
+                    return b.value - a.value;
+                });
+                
+                return mergeGroups;
+            }
+            
+            // 기존 함수 유지 (하위 호환성)
+            // 병합 그룹의 결과 값 계산 함수
+            function calculateMergeValue(group) {
+                // 그룹이 전부 와일드카드로만 구성된 경우
+                if (group.wildcardCount === group.size) {
+                    return WILDCARD_TILE;  // 와일드카드 반환
+                }
+                
+                // 와일드카드가 포함된 그룹에서 일반 타일 값이 9보다 클 경우 처리
+                // (와일드카드가 9 이하의 타일에만 매칭되도록 하는 로직과 일관성 유지)
+                
+                // 일반 타일이 하나 이상 있는 경우
+                // 그룹에서 가장 큰 일반 타일의 값을 찾음
+                const regularTileValues = group.tiles
+                    .map(p => {
+                        const value = typeof p.value !== 'undefined' ? p.value : 
+                                     (p.r !== undefined && p.c !== undefined ? grid[p.r][p.c] : null);
+                        return value !== WILDCARD_TILE ? value : null;
+                    })
+                    .filter(v => v !== null);
+                
+                if (regularTileValues.length === 0) {
+                    return WILDCARD_TILE; // 예외 처리 - 모든 타일이 와일드카드인 경우
+                }
+                
+                // 가장 큰 일반 타일 값 찾기
+                const maxRegularValue = Math.max(...regularTileValues);
+                
+                // 그룹 크기에 따른 결과 값 계산
+                // 모든 그룹은 3개이므로 무조건 3배 값 반환
+                return maxRegularValue * 3;
+            }
+            
+            // 병합 점수 계산 함수
+            function calculateScore(group) {
+                // 결과 값 계산
+                const resultValue = calculateMergeValue(group);
+                
+                // 그룹 크기에 따른 보너스 제거 - 그룹 모두 3개로 제한되어 있음
+                // 보너스 점수 없이 결과 값만 점수로 계산
+                return resultValue;
+            }
+            
+            function findAnyGroupGE3() {
+                const groups = findMergeGroups(grid, 3);
+                if (groups.length === 0) return null;
+                
+                // 첫 번째 그룹 반환 (가장 높은 값을 가진 그룹)
+                const topGroup = groups[0];
+                return { 
+                    val: topGroup.value, 
+                    group: topGroup.tiles 
+                };
+            }
+            function optimizeWildcardUse(group, g = grid) {
+                // 그룹이 모두 와일드카드로만 구성된 경우
+                if (group.wildcardCount === group.size) {
+                    return WILDCARD_TILE;  // 와일드카드 반환
+                }
+                
+                // 와일드카드는 9 이하의 타일에만 매칭되도록 제한
+                // (플러드필 로직과 일관성 유지)
+                
+                // 주변 맥락을 분석하여 와일드카드의 최적 값 결정
+                // 이 함수는 현재 그룹에 일반 타일이 하나라도 있다고 가정
+                
+                // 현재 그룹의 일반 타일 값 찾기
+                const regularTileValues = group.tiles
+                    .map(p => {
+                        const value = typeof p.value !== 'undefined' ? p.value : 
+                                     (p.r !== undefined && p.c !== undefined ? g[p.r][p.c] : null);
+                        return value !== WILDCARD_TILE ? value : null;
+                    })
+                    .filter(v => v !== null);
+                
+                if (regularTileValues.length > 0) {
+                    // 현재 그룹 내의 일반 타일을 기준으로 와일드카드 값 결정
+                    // (가장 큰 값을 선택하여 최대 결과 값을 얻음)
+                    return Math.max(...regularTileValues);
+                } else {
+                    // 예외 처리 - 모든 타일이 와일드카드인 경우
+                    return WILDCARD_TILE;
+                }
+            }
+            
+            /**
+             * 머지 이벤트를 감지하고 결과를 반환하는 함수
+             * 
+             * @param {Object} [forcePivot=null] - 강제 피봇 위치 (옵션)
+             * @returns {Object} 머지 결과 정보
+             * @returns {boolean} .merged - 머지 발생 여부
+             * @returns {number} .score - 획득 점수
+             * @returns {number} .cascadeCount - 연쇄 병합 횟수
+             */
+            function checkMergeResult(forcePivot = null) {
+                // 기존 resolveAutoMerges 함수 활용하여 머지 결과 확인
+                const result = resolveAutoMerges(forcePivot);
+                return result;
+            }
+            
+            /**
+             * 머지 발생 후 보상 조건을 확인하는 함수
+             * 
+             * @param {Object} mergeResult - 머지 결과 정보 객체
+             * @returns {boolean} 보상 조건 충족 여부
+             */
+            function shouldShowReward(mergeResult) {
+                // 머지가 발생하지 않은 경우 보상 팝업 표시하지 않음
+                if (!mergeResult || !mergeResult.merged) return false;
+                
+                // 병합 그룹에 아이템을 가진 타일이 있는지 확인
+                let hasItemInMerge = false;
+                
+                // 병합에 참여한 모든 타일의 위치를 저장한 것이 mergeResult에 있으면 더 정확하게 확인 가능
+                // 이 프로토타입에서는 그런 정보가 없으니, 현재 있는 정보만으로 확인
+                // 현재 그리드에서 아이템을 가진 타일이 있는지 확인
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (hasItem(r, c)) {
+                            hasItemInMerge = true;
+                            break;
+                        }
+                    }
+                    if (hasItemInMerge) break;
+                }
+                
+                return hasItemInMerge;
+            }
+
+            /**
+             * 머지 후 보상 팝업을 표시하는 함수
+             * @returns {boolean} 팝업 표시 성공 여부
+             */
+            function showRewardPopup() {
+                // Get the reward popup element
+                const rewardPopup = document.getElementById('rewardPopup');
+                if (!rewardPopup) {
+                    return false;
+                }
+                
+                // Make sure the reward options are properly initialized
+                initRewardHandlers();
+                
+                // Show the popup
+                rewardPopup.classList.add('show');
+                
+                return true;
+            }
+
+            /**
+             * 보상 팝업을 닫는 함수
+             * @param {boolean} wasSelected - 보상이 선택되었는지 여부
+             * @returns {boolean} 팝업 닫기 성공 여부
+             */
+            function closeRewardPopup(wasSelected = true) {
+                const rewardPopup = document.getElementById('rewardPopup');
+                rewardPopup.classList.remove('show');
+                return true;
+            }
+
+            /**
+             * 특정 기능의 사용 가능 횟수를 증가시키는 함수
+             * @param {string} powerupType - 기능 타입 ("undo", "blockRemoval", "monsterSpawn", "wildcardSpawn")
+             * @param {number} amount - 증가시킬 횟수 (기본값: 1)
+             * @returns {boolean} 증가 처리 성공 여부
+             */
+            function incrementPowerupUses(powerupType, amount = 1) {
+                switch(powerupType) {
+                    case "undo":
+                        undoUsesLeft += amount;
+                        updateUndoButton();
+                        break;
+                    case "blockRemoval":
+                        blockRemovalUsesLeft += amount;
+                        updateBlockRemovalButton();
+                        break;
+                    case "monsterSpawn":
+                        monsterSpawnUsesLeft += amount;
+                        updateMonsterSpawnButton();
+                        break;
+                    case "wildcardSpawn":
+                        wildcardSpawnUsesLeft += amount;
+                        updateWildcardSpawnButton();
+                        break;
+                    default:
+                        return false;
+                }
+                
+                return true;
+            }
+
+            /**
+             * 보상 선택 시 처리하는 함수
+             * @param {string} rewardType - 보상 타입 ("undo", "blockRemoval", "monsterSpawn", "wildcardSpawn")
+             * @returns {boolean} 보상 처리 성공 여부
+             */
+            function selectReward(rewardType) {
+                if (!rewardType) {
+                    info('보상 선택 오류가 발생했습니다. 다시 시도해주세요.', 'err');
+                    return false;
+                }
+                
+                // 보상 이름 매핑
+                const rewardNames = {
+                    "undo": "되돌리기",
+                    "blockRemoval": "블록 제거",
+                    "monsterSpawn": "몬스터 소환",
+                    "wildcardSpawn": "조커 소환"
+                };
+                
+                // 명시적으로 각 보상 타입 처리
+                let success = false;
+                switch(rewardType) {
+                    case "undo":
+                        undoUsesLeft += 1;
+                        updateUndoButton();
+                        success = true;
+                        break;
+                    case "blockRemoval":
+                        blockRemovalUsesLeft += 1;
+                        updateBlockRemovalButton();
+                        success = true;
+                        break;
+                    case "monsterSpawn":
+                        monsterSpawnUsesLeft += 1;
+                        updateMonsterSpawnButton();
+                        success = true;
+                        break;
+                    case "wildcardSpawn":
+                        wildcardSpawnUsesLeft += 1;
+                        updateWildcardSpawnButton();
+                        success = true;
+                        break;
+                    default:
+                        success = false;
+                }
+                
+                // 모든 버튼 상태 업데이트 (한번에 모든 버튼 갱신)
+                updateAllButtons();
+                
+                // 팝업 닫기 (성공 여부와 관계없이 닫음)
+                closeRewardPopup(success);
+                
+                // 성공한 경우에만 안내 메시지 표시
+                if (success) {
+                    info(`${rewardNames[rewardType]} 기능이 1회 추가되었습니다!`);
+                } else {
+                    info('보상 선택 오류가 발생했습니다. 다시 시도해주세요.', 'err');
+                }
+                
+                return success;
+            }
+            
+            /**
+             * 보상 옵션 클릭 이벤트 핸들러 초기화
+             */
+            function initRewardHandlers() {
+                const rewardOptions = document.querySelectorAll('.reward-option');
+                
+                rewardOptions.forEach((option) => {
+                    // Remove any existing click listeners to avoid duplicates
+                    const newOption = option.cloneNode(true);
+                    option.parentNode.replaceChild(newOption, option);
+                    
+                    // Add the new click listener
+                    newOption.addEventListener('click', function(event) {
+                        // Stop event propagation to prevent any parent handlers from triggering
+                        event.stopPropagation();
+                        
+                        const rewardType = this.getAttribute('data-type');
+                        
+                        // Call selectReward with a slight delay to ensure the event completes
+                        setTimeout(() => {
+                            selectReward(rewardType);
+                        }, 10);
+                    });
+                });
+            }
+
+            function resolveAutoMerges(forcePivot = null) {
+                let merged = false;
+                let totalScore = 0;
+                let cascadeCount = 0;
+                
+                while (true) {
+                    // 병합 가능한 모든 그룹 찾기
+                    const mergeGroups = findMergeGroups(grid, 3);
+                    if (mergeGroups.length === 0) break;
+                    
+                    // 현재 단계의 병합을 처리했음을 표시
+                    cascadeCount++;
+                    
+                    // 강제 피봇이 지정된 경우 해당 그룹 찾기
+                    let selectedGroup = mergeGroups[0];  // 기본값은 첫 번째 그룹
+                    
+                    if (forcePivot) {
+                        // 강제 피봇이 있는 경우, 해당 피봇을 포함하는 그룹 찾기
+                        const forcedGroup = mergeGroups.find(g => 
+                            g.tiles.some(t => t.r === forcePivot.r && t.c === forcePivot.c));
+                        
+                        if (forcedGroup) {
+                            selectedGroup = forcedGroup;
+                        }
+                    }
+                    
+                    // 선택된 그룹의 정보 추출
+                    let { tiles, value, wildcardCount, size } = selectedGroup;
+                    
+                    // pivot을 결정: forcePivot이 있고 그룹에 포함된 경우 forcePivot을 pivot으로 사용
+                    let pivot = selectedGroup.pivot;
+                    if (forcePivot && tiles.some(t => t.r === forcePivot.r && t.c === forcePivot.c)) {
+                        pivot = forcePivot;
+                    }
+                    
+                    // 필요시 와일드카드 최적화 수행
+                    const optimizedValue = (wildcardCount > 0) ? 
+                        optimizeWildcardUse(selectedGroup) : value;
+                    
+                    // 병합 결과 값 계산
+                    const resultValue = calculateMergeValue(selectedGroup);
+                    
+                    // 병합 점수 계산
+                    const groupScore = calculateScore(selectedGroup);
+                    totalScore += groupScore;
+                    
+                    // 그룹 크기에 따른 점수 표시 애니메이션
+                    const scoreElem = document.createElement('div');
+                    scoreElem.className = 'score-popup';
+                    
+                    try {
+                        // 보드 요소와 타일 요소가 존재하는지 확인
+                        const pivotIdx = pivot.r * COLS + pivot.c;
+                        const pivotCell = board.children[pivotIdx];
+                        
+                        if (board && pivotCell) {
+                            const boardRect = board.getBoundingClientRect();
+                            const cellRect = pivotCell.getBoundingClientRect();
+                            
+                            // 점수 팝업의 위치 설정
+                            scoreElem.style.left = (cellRect.left + cellRect.width / 2 - boardRect.left) + 'px';
+                            scoreElem.style.top = (cellRect.top - boardRect.top - 30) + 'px';
+                        } else {
+                            // 요소가 없는 경우 기본 위치를 설정
+                            scoreElem.style.left = '50%';
+                            scoreElem.style.top = '50%';
+                            scoreElem.style.transform = 'translate(-50%, -50%)';
+                        }
+                    } catch (e) {
+                        // getBoundingClientRect 예외가 발생한 경우 기본 위치를 설정
+                        console.warn('Failed to position score popup:', e);
+                        scoreElem.style.left = '50%';
+                        scoreElem.style.top = '50%';
+                        scoreElem.style.transform = 'translate(-50%, -50%)';
+                    }
+                    
+                    // 그룹 크기 모두 3개로 제한되어 보너스 점수 표시 없음
+                    scoreElem.textContent = `+${groupScore}`;
+                    
+                    board.appendChild(scoreElem);
+                    
+                    // 애니메이션 종료 후 요소 제거
+                    setTimeout(() => scoreElem.remove(), 900);
+                    
+                    // 피봇 타일이 아닌 모든 타일을 제거하고 피봇에 결과 값 설정
+                    const absorbTiles = tiles.filter(t => t.r !== pivot.r || t.c !== pivot.c);
+                    
+                    // 병합된 타일에 아이템이 있는지 확인 및 처리
+                    // 병합된 그룹의 어느 타일이라도 아이템을 갖고 있으면 피봇에도 아이템 표시
+                    let hasAnyItemInMerge = false;
+                    
+                    // 병합되는 모든 타일 확인 (피봇 포함)
+                    for (const tile of tiles) {
+                        if (hasItem(tile.r, tile.c)) {
+                            hasAnyItemInMerge = true;
+                            break;
+                        }
+                    }
+                    
+                    // 그리드 업데이트
+                    for (const tile of absorbTiles) {
+                        // 타일 제거 시 아이템 정보도 제거
+                        grid[tile.r][tile.c] = 0;
+                        setItem(tile.r, tile.c, false);
+                        drawCell(tile.r, tile.c);
+                    }
+                    
+                    // 결과 값을 피봇 위치에 설정
+                    grid[pivot.r][pivot.c] = resultValue;
+                    
+                    // 아이템이 하나라도 있었으면 결과 타일에도 아이템 표시
+                    setItem(pivot.r, pivot.c, hasAnyItemInMerge);
+                    
+                    drawCell(pivot.r, pivot.c);
+                    
+                    // 애니메이션 효과 - 새로운 pivot 위치에 맞게 애니메이션 적용
+                    // 보드의 자식 요소가 존재하는지 확인
+                    const pivotIdx = pivot.r * COLS + pivot.c;
+                    const pivotChild = board.children[pivotIdx];
+                    let tCell = null;
+                    
+                    // 안전하게 타일 요소 가져오기
+                    if (pivotChild) {
+                        tCell = pivotChild.querySelector('.tile');
+                    }
+                    
+                    if (tCell) {
+                        // 타일 중앙 좌표 구하기
+                        let cellCenterX = 0;
+                        let cellCenterY = 0;
+                        
+                        try {
+                            const cellRect = tCell.getBoundingClientRect();
+                            cellCenterX = cellRect.left + cellRect.width / 2;
+                            cellCenterY = cellRect.top + cellRect.height / 2;
+                        } catch (e) {
+                            // getBoundingClientRect가 실패하는 경우 기본값 사용
+                            console.warn('Failed to get tile position:', e);
+                        }
+                        
+                        // 그룹 크기가 모두 3개로 제한되어 항상 기본 병합 효과만 사용
+                        tCell.classList.add('merge');
+                        // 머지 완료후 추가 효과 (after-merge 효과 추가)
+                        setTimeout(() => {
+                            tCell.classList.remove('merge');
+                            tCell.classList.add('after-merge');
+                            setTimeout(() => {
+                                tCell.classList.remove('after-merge');
+                            }, 800);
+                        }, 600); // 애니메이션 시간 증가 (0.5초 + 약간의 여유)
+                        
+                        // 기본 파티클 효과
+                        createParticles(cellCenterX, cellCenterY, 8, 1.0);
+                    }
+                    
+                    // 🎵 병합 효과음 (그룹 크기 3개로 모두 동일 - 기본 효과음만 사용)
+                    if (sounds.blocks[value * 3]) {
+                        sounds.blocks[value * 3].currentTime = 0;
+                        playSoundSafely(sounds.blocks[value * 3]);
+                    }
+                    
+                    merged = true;
+                    forcePivot = null;  // 현재 병합 후에는 forcePivot 재설정
+                }
+                
+                // 자동 병합 및 모든 처리가 완료되었음
+                // saveSnapshot 호출은 모든 처리가 완료된 후 한 번만 수행됨
+                
+                // 병합 결과 정보 반환
+                return {
+                    merged,
+                    score: totalScore,
+                    cascadeCount
+                };
+                
+                // 병합 결과 반환
+                return {
+                    merged,
+                    score: totalScore,
+                    cascadeCount
+                };
+            }
+
+
+            /* ====== 게임오버 ====== */
+            // 이동 검증 함수 - 향상된 병합 로직 지원
+            function validateMergeMove(fromPos, toPos, value, g = grid) {
+                // 기본 검증 - 경로 존재 여부
+                const path = findPathViaEmpties(fromPos, toPos, g);
+                if (!path) {
+                    return {
+                        valid: false,
+                        groupSize: 0,
+                        reasons: ["경로가 막혀 이동할 수 없습니다."]
+                    };
+                }
+                
+                // 이동 후 그룹 크기 계산 - 현재 그룹의 정확한 크기 파악
+                const currentGroup = floodSame(fromPos.r, fromPos.c, value, g, Infinity);
+                const groupSizeAfterMove = groupSizeIfMoved(fromPos, toPos, value);
+                
+                // 이동 후 유효성 검사
+                const reasons = [];
+                
+                // 그룹 형성 확인
+                if (groupSizeAfterMove < 2) {
+                    reasons.push("이동해도 그룹이 형성되지 않습니다.");
+                }
+                
+                // 현재 2개 그룹을 분리하는 경우, 3매칭이 되어야 함
+                // 와일드카드 예외 처리
+                if (currentGroup.length === 2 && groupSizeAfterMove < 3) {
+                    // 와일드카드는 2개 이상의 그룹을 형성할 수 있으면 2그룹에서도 이동 가능
+                    if (value === WILDCARD_TILE && groupSizeAfterMove >= 2) {
+                        // 와일드카드 예외 적용: 검증 통과
+                    } else {
+                        reasons.push("3매칭 목적이 아니면 두개를 떼어 놓을 수 없습니다.");
+                    }
+                }
+                
+                return {
+                    valid: reasons.length === 0,
+                    groupSize: groupSizeAfterMove,
+                    reasons
+                };
+            }
+            
+            function legalMoveExistsForTile(r, c) {
+                const v = grid[r][c]; 
+                const currentGroup = floodSame(r, c, v);
+                
+                for (let rr = 0; rr < ROWS; rr++)for (let cc = 0; cc < COLS; cc++) {
+                    if (!isEmpty(rr, cc)) continue;
+                    
+                    const from = { r, c };
+                    const to = { r: rr, c: cc };
+                    
+                    // validateMergeMove 함수를 사용하여 유효성 검사
+                    const validationResult = validateMergeMove(from, to, v);
+                    if (validationResult.valid) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            function hasAnyMoves() {
+                for (let r = 0; r < ROWS; r++)for (let c = 0; c < COLS; c++)
+                    // 와일드카드도 일반 타일처럼 이동 가능
+                    if ((grid[r][c] > 0 || grid[r][c] === WILDCARD_TILE) && legalMoveExistsForTile(r, c)) return true;
+                return false;
+            }
+            function checkGameOverSoon() {
+                setTimeout(() => {
+                    if (!gameOverShown && !hasAnyMoves()) {
+                        gameOverShown = true;
+                        const total = grid.flat().filter(v => v > 0).reduce((a, b) => a + b, 0);
+                        showResult(total);
+                    }
+                }, 30);
+            }
+
+            /* ====== 히스토리 ====== */
+            function saveSnapshot() {
+                history.push({ 
+                    grid: cloneGrid(grid), 
+                    tileItems: {...tileItems}, // 아이템 정보 복사
+                    turn, 
+                    untilSpawn, 
+                    blockSpawnTurn 
+                });
+                if (history.length > 50) history.shift();
+                
+                // 되돌리기 버튼 활성화 상태 업데이트
+                updateUndoButton();
+            }
+            
+            function updateUndoButton() {
+                const btnUndo = document.getElementById('btnUndo');
+                if (!btnUndo) return;
+                
+                if (history.length === 0) {
+                    btnUndo.disabled = true;
+                    btnUndo.style.opacity = "0.5";
+                } else {
+                    btnUndo.disabled = false;
+                    btnUndo.style.opacity = "1";
+                }
+            }
+            
+            function undoMove() {
+                // 되돌릴 이동이 없으면 메시지 표시
+                if (history.length === 0) {
+                    info("되돌릴 이동이 없습니다.", "warn");
+                    return false;
+                }
+                
+                // 남은 되돌리기 횟수 확인
+                if (undoUsesLeft <= 0) {
+                    info("되돌리기 기능을 모두 사용했습니다.", "err");
+                    return false;
+                }
+                
+                // 애니메이션 진행 중에는 되돌리기 불가
+                if (isAnimating) {
+                    info("애니메이션이 진행 중입니다. 잠시 후 다시 시도하세요.", "warn");
+                    return false;
+                }
+                
+                // 게임 오버 화면이 표시된 상태에서는 되돌리기 불가
+                if (gameOverShown) {
+                    info("게임 오버 상태에서는 되돌리기를 사용할 수 없습니다.", "warn");
+                    return false;
+                }
+                
+                // 이전 상태 가져오기
+                const prevState = history.pop();
+                
+                // 게임 상태 복원
+                grid = prevState.grid;
+                turn = prevState.turn;
+                untilSpawn = prevState.untilSpawn;
+                blockSpawnTurn = prevState.blockSpawnTurn;
+                
+                // 아이템 정보 복원
+                if (prevState.tileItems) {
+                    tileItems = {...prevState.tileItems};
+                } else {
+                    // 이전 버전과의 호환성을 위해 모든 타일에 아이템 부여
+                    clearItems();
+                    for (let r = 0; r < ROWS; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            if (grid[r][c] > 0 || grid[r][c] === WILDCARD_TILE) {
+                                setItem(r, c, true);
+                            }
+                        }
+                    }
+                }
+                
+                // UI 업데이트
+                renderAll();
+                selected = null;
+                highlightSelection();
+                clearPossibleMoves();
+                
+                // 되돌리기 시각적 효과 - 보드 전체 강조 효과
+                board.classList.add('undo-flash');
+                setTimeout(() => {
+                    board.classList.remove('undo-flash');
+                }, 300);
+                
+                // 되돌리기 효과음
+                sounds.click.currentTime = 0;
+                playSoundSafely(sounds.click);
+                
+                // 사용 횟수 차감
+                undoUsesLeft--;
+                
+                // 성공 메시지 표시
+                info("이전 이동으로 되돌아갔습니다.", "");
+                
+                // 되돌리기 버튼 상태 업데이트
+                updateUndoButton();
+                
+                return true;
+            }
+
+            /* ====== 결과 ====== */
+            async function showResult(total) {
+                popupTitle.textContent = "게임 오버";
+                finalScore.textContent = `${playerId}의 최종 점수: ${total}`;
+                noMovesMsg.style.display = "block";
+                lastGameState = cloneGrid(grid);
+
+                if (total > bestScore) {
+                    bestScore = total;
+                    bestGameState = cloneGrid(grid);
+                    localStorage.setItem("mergeBestScore", bestScore);
+                    localStorage.setItem("mergeBestState", JSON.stringify(bestGameState));
+                }
+
+                rankingsEl.innerHTML = "<div style='padding:10px'>랭킹을 불러오는중...</div>";
+                popup.classList.add('show');
+
+                // 🎵 게임오버음
+                sounds.gameover.currentTime = 0;
+                playSoundSafely(sounds.gameover);
+
+                try {
+                    await fetch(GAS_URL, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ secret: "TEST2", name: playerId, score: total, state: grid }),
+                        mode: "no-cors"
+                    });
+                    console.log("✅ 저장 요청 보냄");
+                } catch (e) { console.error("❌ POST 오류:", e); }
+
+                loadRanking();
+            }
+            /* ====== 랭킹 ====== */
+            async function loadRanking() {
+                try {
+                    const res = await fetch(`${GAS_URL}?mode=ranking`, { cache: "no-cache" });
+                    let data = [];
+                    try { data = await res.json(); } catch (e) { console.error("❌ JSON 파싱 실패:", e); }
+                    renderRanking(Array.isArray(data) ? data.slice(0, 100) : []);
+                } catch (e) {
+                    console.error("❌ 랭킹 fetch 실패:", e);
+                    renderRanking([]);
+                }
+            }
+            function renderRanking(rows) {
+                rankingsEl.innerHTML = "";
+                if (!rows || rows.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.style.padding = '10px';
+                    empty.textContent = '랭킹 데이터를 불러오지 못했습니다.';
+                    rankingsEl.appendChild(empty);
+                    return;
+                }
+                rows.forEach((row, i) => {
+                    const item = document.createElement('div');
+                    item.className = 'rank-item' + (i === 0 ? ' top1' : i === 1 ? ' top2' : i === 2 ? ' top3' : '');
+                    const left = document.createElement('div'); left.className = 'left';
+                    const crown = document.createElement('span'); crown.className = 'crown'; crown.textContent = (i < 3 ? '👑' : '');
+                    left.appendChild(crown);
+                    const name = document.createElement('span'); name.textContent = `${i + 1}. ${row.name}`; left.appendChild(name);
+
+                    const right = document.createElement('div'); right.className = 'right';
+                    if (i < 3) {
+                        const btn = document.createElement('button'); btn.textContent = "보기"; btn.className = "btn";
+                        btn.addEventListener('click', async () => {
+                            try {
+                                if (row.state) { renderMiniPopup(JSON.parse(row.state), row.name, row.score); }
+                                else {
+                                    const res = await fetch(`${GAS_URL}?mode=last&name=${encodeURIComponent(row.name)}`);
+                                    const data = await res.json();
+                                    if (data.state) renderMiniPopup(JSON.parse(data.state), data.name, data.score);
+                                    else alert("저장된 전적이 없습니다.");
+                                }
+                            } catch (e) { console.error("❌ last fetch 오류:", e); alert("전적을 불러올 수 없습니다."); }
+                        });
+                        right.appendChild(btn);
+                    }
+                    const score = document.createElement('span'); score.className = 'score'; score.textContent = `${row.score}`;
+                    right.appendChild(score);
+                    item.appendChild(left); item.appendChild(right); rankingsEl.appendChild(item);
+                });
+            }
+
+            /* ====== 미니팝업 ====== */
+            function renderMiniPopup(state, id, score) {
+                let mini = document.getElementById('miniPopup');
+                if (!mini) {
+                    mini = document.createElement('div'); mini.id = 'miniPopup';
+                    mini.style.position = 'fixed'; mini.style.inset = '0'; mini.style.background = 'rgba(0,0,0,0.6)';
+                    mini.style.display = 'flex'; mini.style.alignItems = 'center'; mini.style.justifyContent = 'center';
+                    mini.style.zIndex = '2000'; document.body.appendChild(mini);
+                }
+                mini.innerHTML = '';
+                const box = document.createElement('div');
+                box.style.background = '#161c29'; box.style.padding = '16px'; box.style.borderRadius = '12px';
+                box.style.textAlign = 'center'; box.style.boxShadow = '0 6px 20px rgba(0,0,0,0.6)';
+                const title = document.createElement('h3'); title.textContent = `${id} 최종 보드 (점수 ${score})`; box.appendChild(title);
+
+                const wrap = document.createElement('div');
+                wrap.style.display = 'grid';
+                wrap.style.gridTemplateColumns = `repeat(${COLS},1fr)`;
+                wrap.style.gridTemplateRows = `repeat(${ROWS},1fr)`;
+                wrap.style.gap = '4px'; wrap.style.width = '90%'; wrap.style.maxWidth = '420px';
+                wrap.style.aspectRatio = `${COLS}/${ROWS}`; wrap.style.margin = '12px auto';
+                for (let r = 0; r < ROWS; r++)for (let c = 0; c < COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.style.width = '100%'; cell.style.aspectRatio = '1/1'; cell.style.border = '1px solid #222'; cell.style.background = '#111';
+                    const v = state[r][c];
+                    if ((v > 0 || v === WILDCARD_TILE) && TILE_IMAGES[v]) {
+                        cell.style.backgroundImage = `url(${TILE_IMAGES[v]})`; 
+                        cell.style.backgroundSize = "contain"; 
+                        cell.style.backgroundRepeat = "no-repeat"; 
+                        cell.style.backgroundPosition = "center";
+                        // 랭킹 보드에서 와일드카드 타일에 효과 추가
+                        if (v === WILDCARD_TILE) {
+                            cell.style.boxShadow = "0 0 10px gold, 0 0 20px rgba(255, 215, 0, 0.7)";
+                        }
+                    }
+                    else if (v === -1) { cell.style.backgroundImage = "url('images/blocked.png')"; cell.style.backgroundSize = "contain"; cell.style.backgroundRepeat = "no-repeat"; cell.style.backgroundPosition = "center"; }
+                    else { cell.style.backgroundImage = "url('images/empty.png')"; cell.style.backgroundSize = "contain"; cell.style.backgroundRepeat = "no-repeat"; cell.style.backgroundPosition = "center"; }
+                    wrap.appendChild(cell);
+                }
+                box.appendChild(wrap);
+                const close = document.createElement('button'); close.textContent = '닫기'; close.className = 'btn'; close.style.marginTop = '10px'; close.onclick = () => mini.remove(); box.appendChild(close);
+                mini.appendChild(box);
+            }
+
+            /* ====== 기타 이벤트 ====== */
+            document.addEventListener('click', (e) => {
+                if (!toast.classList.contains('show')) return;
+                if (e.target.closest('#toast')) return;
+                if (toastTimer) clearTimeout(toastTimer);
+                setTimeout(() => { toast.classList.remove('show'); toastTimer = null; }, 50);
+            }, true);
+
+            /* ====== 시작 ====== */
+            preloadImages(IMAGE_URLS).then(() => {
+                console.log("✅ 모든 이미지 프리로드 완료");
+                init();
+
+               
+            });
+        })();
+        // 🎵 첫 터치/클릭 시 BGM 시작
+        function startBgm() {
+            if (sounds.bgm && sounds.bgm.paused) {
+                try {
+                    // 오디오 재생 시도
+                    const playPromise = sounds.bgm.play();
+                    
+                    // 프로미스 있을 경우 처리
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                console.log("🎶 BGM 시작됨");
+                            })
+                            .catch(err => {
+                                console.log("🔇 BGM 시작 실패:", err);
+                            });
+                    } else {
+                        console.log("🎶 BGM 재생 시도");
+                    }
+                } catch (e) {
+                    console.warn('BGM 재생 오류:', e);
+                }
+            }
+        }
+
+        document.addEventListener("touchstart", startBgm, { once: true });
+        document.addEventListener("click", startBgm, { once: true });
+
+        // 🔥 앱/탭 전환 시 BGM 제어
+    function pauseBgm() {
+        if (window.sounds && window.sounds.bgm && !window.sounds.bgm.paused) {
+            window.sounds.bgm.pause();
+        }
+    }
+    function resumeBgm() {
+        if (window.sounds && window.sounds.bgm) {
+            window.playSoundSafely(window.sounds.bgm);
+        }
+    }
+
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) pauseBgm();
+            else resumeBgm();
+        });
+
+        window.addEventListener("pagehide", pauseBgm);
+        window.addEventListener("pageshow", resumeBgm);
+
+        window.addEventListener("blur", pauseBgm);
+        window.addEventListener("focus", resumeBgm);
+
+    </script>
+</body>
+
+</html>
+
+
+
+
+
+
+
+
+
+
+
